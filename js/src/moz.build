@@ -431,6 +431,23 @@ elif CONFIG['JS_CODEGEN_MIPS']:
         UNIFIED_SOURCES += [
             'jit/mips/Simulator-mips.cpp'
         ]
+elif CONFIG['JS_CODEGEN_MIPS64']:
+    UNIFIED_SOURCES += [
+        'jit/mips64/Architecture-mips64.cpp',
+        'jit/mips64/Assembler-mips64.cpp',
+        'jit/mips64/Bailouts-mips64.cpp',
+        'jit/mips64/BaselineCompiler-mips64.cpp',
+        'jit/mips64/BaselineIC-mips64.cpp',
+        'jit/mips64/CodeGenerator-mips64.cpp',
+        'jit/mips64/Lowering-mips64.cpp',
+        'jit/mips64/MacroAssembler-mips64.cpp',
+        'jit/mips64/MoveEmitter-mips64.cpp',
+        'jit/mips64/Trampoline-mips64.cpp',
+    ]
+    if CONFIG['JS_MIPS64_SIMULATOR']:
+        UNIFIED_SOURCES += [
+            'jit/mips64/Simulator-mips64.cpp'
+        ]
 
 if CONFIG['OS_ARCH'] == 'WINNT':
     SOURCES += [
