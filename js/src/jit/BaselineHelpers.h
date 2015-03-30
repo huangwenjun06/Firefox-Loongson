@@ -15,6 +15,8 @@
 # include "jit/arm/BaselineHelpers-arm.h"
 #elif defined(JS_CODEGEN_MIPS)
 # include "jit/mips/BaselineHelpers-mips.h"
+#elif defined(JS_CODEGEN_MIPS64)
+# include "jit/mips64/BaselineHelpers-mips64.h"
 #elif defined(JS_CODEGEN_NONE)
 # include "jit/none/BaselineHelpers-none.h"
 #else

@@ -355,6 +355,8 @@
 # include "jit/arm/LOpcodes-arm.h"
 #elif defined(JS_CODEGEN_MIPS)
 # include "jit/mips/LOpcodes-mips.h"
+#elif defined(JS_CODEGEN_MIPS64)
+# include "jit/mips64/LOpcodes-mips64.h"
 #elif defined(JS_CODEGEN_NONE)
 # include "jit/none/LOpcodes-none.h"
 #else

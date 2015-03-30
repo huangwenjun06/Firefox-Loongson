@@ -11,6 +11,8 @@
 # include "jit/arm/Assembler-arm.h"
 #elif defined(JS_CODEGEN_MIPS)
 # include "jit/mips/Assembler-mips.h"
+#elif defined(JS_CODEGEN_MIPS64)
+# include "jit/mips64/Assembler-mips64.h"
 #endif
 #include "jit/Registers.h"
 #include "jit/shared/Assembler-shared.h"
@@ -361,7 +363,7 @@ class RepatchIonCache : public IonCache
     // Offset from the initial jump to the rejoin label.
 #ifdef JS_CODEGEN_ARM
     static const size_t REJOIN_LABEL_OFFSET = 4;
-#elif defined(JS_CODEGEN_MIPS)
+#elif defined(JS_CODEGEN_MIPS) || defined(JS_CODEGEN_MIPS64)
     // The size of jump created by MacroAssemblerMIPSCompat::jumpWithPatch.
     static const size_t REJOIN_LABEL_OFFSET = 4 * sizeof(void*);
 #else
@@ -370,7 +372,7 @@ class RepatchIonCache : public IonCache
 
     CodeLocationLabel rejoinLabel() const {
         uint8_t* ptr = initialJump_.raw();
-#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_MIPS)
+#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_MIPS) || defined(JS_CODEGEN_MIPS64)
         uint32_t i = 0;
         while (i < REJOIN_LABEL_OFFSET)
             ptr = Assembler::NextInstruction(ptr, &i);

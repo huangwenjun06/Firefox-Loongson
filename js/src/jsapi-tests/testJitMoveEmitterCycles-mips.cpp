@@ -6,11 +6,18 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #if defined(JS_MIPS_SIMULATOR)
-#include "jit/Linker.h"
-#include "jit/MacroAssembler.h"
 #include "jit/mips/Assembler-mips.h"
 #include "jit/mips/MoveEmitter-mips.h"
 #include "jit/mips/Simulator-mips.h"
+#elif defined(JS_MIPS64_SIMULATOR)
+#include "jit/mips64/Assembler-mips64.h"
+#include "jit/mips64/MoveEmitter-mips64.h"
+#include "jit/mips64/Simulator-mips64.h"
+#endif
+
+#if defined(JS_MIPS_SIMULATOR)
+#include "jit/Linker.h"
+#include "jit/MacroAssembler.h"
 #include "jit/MoveResolver.h"
 
 #include "jsapi-tests/tests.h"

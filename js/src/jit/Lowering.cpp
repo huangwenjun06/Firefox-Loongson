@@ -1767,7 +1767,7 @@ LIRGenerator::visitToDouble(MToDouble* convert)
       case MIRType_Float32:
       {
         LFloat32ToDouble* lir;
-#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_MIPS)
+#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_MIPS) || defined(JS_CODEGEN_MIPS64)
         // Bug 1039993: this used to be useRegisterAtStart, and theoretically, it
         // should still be, however, there is a bug in LSRA's implementation of
         // *AtStart, which is quite fundamental. This should be reverted when that
@@ -1835,7 +1835,7 @@ LIRGenerator::visitToFloat32(MToFloat32* convert)
       case MIRType_Double:
       {
         LDoubleToFloat32* lir;
-#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_MIPS)
+#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_MIPS) || defined(JS_CODEGEN_MIPS64)
         // Bug 1039993: workaround LSRA issues.
         if (gen->optimizationInfo().registerAllocator() == RegisterAllocator_LSRA)
             lir = new(alloc()) LDoubleToFloat32(useRegister(opd));

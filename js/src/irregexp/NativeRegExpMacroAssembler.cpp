@@ -385,7 +385,7 @@ NativeRegExpMacroAssembler::GenerateCode(JSContext* cx, bool match_only)
         LiveGeneralRegisterSet volatileRegs(GeneralRegisterSet::Volatile());
 #if defined(JS_CODEGEN_ARM)
         volatileRegs.add(Register::FromCode(Registers::lr));
-#elif defined(JS_CODEGEN_MIPS)
+#elif defined(JS_CODEGEN_MIPS) || defined(JS_CODEGEN_MIPS64)
         volatileRegs.add(Register::FromCode(Registers::ra));
 #endif
         volatileRegs.takeUnchecked(temp0);
@@ -1310,7 +1310,7 @@ NativeRegExpMacroAssembler::CanReadUnaligned()
 {
 #if defined(JS_CODEGEN_ARM)
     return !jit::HasAlignmentFault();
-#elif defined(JS_CODEGEN_MIPS)
+#elif defined(JS_CODEGEN_MIPS) || defined(JS_CODEGEN_MIPS64)
     return false;
 #else
     return true;

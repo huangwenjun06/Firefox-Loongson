@@ -724,7 +724,7 @@ class AsmJSModule
 
         explicit RelativeLink(Kind kind)
         {
-#if defined(JS_CODEGEN_MIPS)
+#if defined(JS_CODEGEN_MIPS) || defined(JS_CODEGEN_MIPS64)
             kind_ = kind;
 #elif defined(JS_CODEGEN_ARM)
             // On ARM, CodeLabels are only used to label raw pointers, so in
@@ -735,14 +735,14 @@ class AsmJSModule
         }
 
         bool isRawPointerPatch() {
-#if defined(JS_CODEGEN_MIPS)
+#if defined(JS_CODEGEN_MIPS) || defined(JS_CODEGEN_MIPS64)
             return kind_ == RawPointer;
 #else
             return true;
 #endif
         }
 
-#ifdef JS_CODEGEN_MIPS
+#if defined(JS_CODEGEN_MIPS) || defined(JS_CODEGEN_MIPS64)
         Kind kind_;
 #endif
         uint32_t patchAtOffset;
