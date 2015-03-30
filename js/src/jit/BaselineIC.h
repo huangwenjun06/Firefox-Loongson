@@ -1133,7 +1133,7 @@ class ICStubCompiler
 #if defined(JS_CODEGEN_ARM)
         MOZ_ASSERT(!regs.has(BaselineTailCallReg));
         regs.take(BaselineSecondScratchReg);
-#elif defined(JS_CODEGEN_MIPS)
+#elif defined(JS_CODEGEN_MIPS) || defined(JS_CODEGEN_MIPS64)
         MOZ_ASSERT(!regs.has(BaselineTailCallReg));
         MOZ_ASSERT(!regs.has(BaselineSecondScratchReg));
 #endif
@@ -5450,7 +5450,7 @@ class ICCall_Native : public ICMonitoredStub
     HeapPtrObject templateObject_;
     uint32_t pcOffset_;
 
-#if defined(JS_ARM_SIMULATOR) || defined(JS_MIPS_SIMULATOR)
+#if defined(JS_ARM_SIMULATOR) || defined(JS_MIPS_SIMULATOR) || defined(JS_MIPS64_SIMULATOR)
     void* native_;
 #endif
 
@@ -5476,7 +5476,7 @@ class ICCall_Native : public ICMonitoredStub
         return offsetof(ICCall_Native, pcOffset_);
     }
 
-#if defined(JS_ARM_SIMULATOR) || defined(JS_MIPS_SIMULATOR)
+#if defined(JS_ARM_SIMULATOR) || defined(JS_MIPS_SIMULATOR) || defined(JS_MIPS64_SIMULATOR)
     static size_t offsetOfNative() {
         return offsetof(ICCall_Native, native_);
     }

@@ -1837,6 +1837,8 @@ LAllocation::toRegister() const
 # include "jit/arm/LIR-arm.h"
 #elif defined(JS_CODEGEN_MIPS)
 # include "jit/mips/LIR-mips.h"
+#elif defined(JS_CODEGEN_MIPS64)
+# include "jit/mips64/LIR-mips64.h"
 #elif defined(JS_CODEGEN_NONE)
 # include "jit/none/LIR-none.h"
 #else

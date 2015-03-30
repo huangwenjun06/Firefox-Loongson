@@ -14,6 +14,7 @@
 #include "jit/CompileInfo.h"
 #include "jit/JitSpewer.h"
 #include "jit/mips/Simulator-mips.h"
+#include "jit/mips64/Simulator-mips64.h"
 #include "jit/Recover.h"
 #include "jit/RematerializedFrame.h"
 
@@ -372,8 +373,8 @@ struct BaselineStackBuilder
         MOZ_ASSERT(BaselineFrameReg == FramePointer);
         priorOffset -= sizeof(void*);
         return virtualPointerAtStackOffset(priorOffset);
-#elif defined(JS_CODEGEN_X64) || defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_MIPS)
-        // On X64, ARM and MIPS, the frame pointer save location depends on
+#elif defined(JS_CODEGEN_X64) || defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_MIPS) || defined(JS_CODEGEN_MIPS64)
+        // On X64, ARM and MIPS/MIPS64, the frame pointer save location depends on
         // the caller of the rectifier frame.
         BufferPointer<RectifierFrameLayout> priorFrame =
             pointerAtStackOffset<RectifierFrameLayout>(priorOffset);
@@ -1557,7 +1558,7 @@ jit::BailoutIonToBaseline(JSContext* cx, JitActivation* activation, JitFrameIter
     bool overRecursed = false;
     BaselineBailoutInfo* info = builder.info();
     uint8_t* newsp = info->incomingStack - (info->copyStackTop - info->copyStackBottom);
-#if defined(JS_ARM_SIMULATOR) || defined(JS_MIPS_SIMULATOR)
+#if defined(JS_ARM_SIMULATOR) || defined(JS_MIPS_SIMULATOR) || defined(JS_MIPS64_SIMULATOR)
     if (Simulator::Current()->overRecursed(uintptr_t(newsp)))
         overRecursed = true;
 #else

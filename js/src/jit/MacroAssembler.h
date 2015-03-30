@@ -19,6 +19,8 @@
 # include "jit/arm/MacroAssembler-arm.h"
 #elif defined(JS_CODEGEN_MIPS)
 # include "jit/mips/MacroAssembler-mips.h"
+#elif defined(JS_CODEGEN_MIPS64)
+# include "jit/mips64/MacroAssembler-mips64.h"
 #elif defined(JS_CODEGEN_NONE)
 # include "jit/none/MacroAssembler-none.h"
 #else
@@ -45,6 +47,8 @@
 #elif defined(JS_CODEGEN_ARM)
 # define ONLY_X86_X64 = delete
 #elif defined(JS_CODEGEN_MIPS)
+# define ONLY_X86_X64 = delete
+#elif defined(JS_CODEGEN_MIPS64)
 # define ONLY_X86_X64 = delete
 #elif defined(JS_CODEGEN_NONE)
 # define ONLY_X86_X64 = delete

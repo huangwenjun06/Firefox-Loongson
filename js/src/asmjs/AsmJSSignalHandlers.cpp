@@ -337,7 +337,7 @@ struct macos_x86_context {
 # define PC_sig(p) EIP_sig(p)
 #elif defined(JS_CPU_ARM)
 # define PC_sig(p) R15_sig(p)
-#elif defined(JS_CPU_MIPS)
+#elif defined(JS_CPU_MIPS) || defined(JS_CPU_MIPS64)
 # define PC_sig(p) EPC_sig(p)
 #endif
 
@@ -1163,9 +1163,9 @@ RedirectJitCodeToInterruptCheck(JSRuntime* rt, CONTEXT* context)
     if (AsmJSActivation* activation = rt->asmJSActivationStack()) {
         const AsmJSModule& module = activation->module();
 
-#if defined(JS_ARM_SIMULATOR) || defined(JS_MIPS_SIMULATOR)
+#if defined(JS_ARM_SIMULATOR) || defined(JS_MIPS_SIMULATOR) || defined(JS_MIPS64_SIMULATOR)
         if (module.containsFunctionPC((void*)rt->simulator()->get_pc()))
-            rt->simulator()->set_resume_pc(int32_t(module.interruptExit()));
+            rt->simulator()->set_resume_pc(intptr_t(module.interruptExit()));
 #endif
 
         uint8_t** ppc = ContextToPC(context);

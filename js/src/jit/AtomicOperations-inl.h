@@ -11,6 +11,8 @@
 # include "jit/arm/AtomicOperations-arm.h"
 #elif defined(JS_CODEGEN_MIPS)
 # include "jit/mips/AtomicOperations-mips.h"
+#elif defined(JS_CODEGEN_MIPS64)
+# include "jit/mips64/AtomicOperations-mips64.h"
 #elif defined(JS_CODEGEN_NONE)
 # include "jit/none/AtomicOperations-none.h"
 #elif defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)

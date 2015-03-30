@@ -1145,7 +1145,7 @@ JSContext::mark(JSTracer* trc)
 void*
 ExclusiveContext::stackLimitAddressForJitCode(StackKind kind)
 {
-#if defined(JS_ARM_SIMULATOR) || defined(JS_MIPS_SIMULATOR)
+#if defined(JS_ARM_SIMULATOR) || defined(JS_MIPS_SIMULATOR) || defined(JS_MIPS64_SIMULATOR)
     return runtime_->addressOfSimulatorStackLimit();
 #else
     return stackLimitAddress(kind);
