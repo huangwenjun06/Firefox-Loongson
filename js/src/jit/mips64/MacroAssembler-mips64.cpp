@@ -4084,7 +4084,7 @@ void
 MacroAssembler::Pop(Register reg)
 {
     ma_pop(reg);
-    adjustFrame(-sizeof(intptr_t));
+    adjustFrame((int32_t)-sizeof(intptr_t));
 }
 
 void
