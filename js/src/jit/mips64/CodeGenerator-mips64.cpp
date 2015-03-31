@@ -1305,11 +1305,11 @@ CodeGeneratorMIPS64::visitRoundF(LRoundF* lir)
 
     Label bail, negative, end, skipCheck;
 
-    // Load 0.5 in the temp register.
-    masm.loadConstantFloat32(0.5, temp);
+    // Load biggest number less than 0.5 in the temp register.
+    masm.loadConstantFloat32(GetBiggestNumberLessThan(0.5f), temp);
 
     // Branch to a slow path for negative inputs. Doesn't catch NaN or -0.
-    masm.loadConstantFloat32(0.0, scratch);
+    masm.loadConstantFloat32(0.0f, scratch);
     masm.ma_bc1s(input, scratch, &negative, Assembler::DoubleLessThan, ShortJump);
 
     // If Nan, 0 or -0 check for bailout
@@ -1324,8 +1324,7 @@ CodeGeneratorMIPS64::visitRoundF(LRoundF* lir)
     masm.ma_b(&end, ShortJump);
 
     masm.bind(&skipCheck);
-    masm.loadConstantFloat32(0.5, scratch);
-    masm.as_adds(scratch, input, scratch);
+    masm.as_adds(scratch, input, temp);
     masm.as_floorws(scratch, scratch);
 
     masm.moveFromFloat32(scratch, output);
@@ -1337,6 +1336,15 @@ CodeGeneratorMIPS64::visitRoundF(LRoundF* lir)
 
     // Input is negative, but isn't -0.
     masm.bind(&negative);
+
+    // Inputs in ]-0.5; 0] need to be added 0.5, other negative inputs need to
+    // be added the biggest double less than 0.5.
+    Label loadJoin;
+    masm.loadConstantFloat32(-0.5f, scratch);
+    masm.branchFloat(Assembler::DoubleLessThan, input, scratch, &loadJoin);
+    masm.loadConstantFloat32(0.5f, temp);
+    masm.bind(&loadJoin);
+
     masm.as_adds(temp, input, temp);
 
     // If input + 0.5 >= 0, input is a negative number >= -0.5 and the
