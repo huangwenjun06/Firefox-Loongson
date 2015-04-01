@@ -291,7 +291,7 @@ TraceOneDataRelocation(JSTracer* trc, Instruction* inst)
         jsval_layout layout;
         layout.asBits = word;
         Value v = IMPL_TO_JSVAL(layout);
-        gc::MarkValueUnbarriered(trc, &v, "ion-masm-value");
+        TraceManuallyBarrieredEdge(trc, &v, "ion-masm-value");
         ptr = (void*)JSVAL_TO_IMPL(v).asBits;
     } else {
         // The low bit shouldn't be set. If it is, we probably got a dummy
