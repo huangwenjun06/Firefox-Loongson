@@ -3844,7 +3844,7 @@ void
 MacroAssemblerMIPS64Compat::atomicFetchOp(int nbytes, bool signExtend, AtomicOp op, const Imm32& value,
                    const Address& address, Register temp, Register output)
 {
-    AllocatableGeneralRegisterSet regs(GeneralRegisterSet(Registers::VolatileMask));
+    AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
 
     regs.take(temp);
     regs.take(output);
@@ -3858,7 +3858,7 @@ void
 MacroAssemblerMIPS64Compat::atomicFetchOp(int nbytes, bool signExtend, AtomicOp op, const Imm32& value,
                    const BaseIndex& address, Register temp, Register output)
 {
-    AllocatableGeneralRegisterSet regs(GeneralRegisterSet(Registers::VolatileMask));
+    AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
 
     regs.take(temp);
     regs.take(output);
@@ -3873,7 +3873,7 @@ void
 MacroAssemblerMIPS64Compat::atomicFetchOp(int nbytes, bool signExtend, AtomicOp op, const Register& value,
                    const Address& address, Register temp, Register output)
 {
-    AllocatableGeneralRegisterSet regs(GeneralRegisterSet(Registers::VolatileMask));
+    AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
 
     regs.take(value);
     regs.take(temp);
@@ -3887,7 +3887,7 @@ void
 MacroAssemblerMIPS64Compat::atomicFetchOp(int nbytes, bool signExtend, AtomicOp op, const Register& value,
                    const BaseIndex& address, Register temp, Register output)
 {
-    AllocatableGeneralRegisterSet regs(GeneralRegisterSet(Registers::VolatileMask));
+    AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
 
     regs.take(value);
     regs.take(temp);
