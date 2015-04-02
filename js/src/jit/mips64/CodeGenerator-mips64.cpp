@@ -2026,7 +2026,43 @@ CodeGeneratorMIPS64::visitAsmJSCompareExchangeHeap(LAsmJSCompareExchangeHeap* in
 void
 CodeGeneratorMIPS64::visitAsmJSAtomicBinopHeap(LAsmJSAtomicBinopHeap* ins)
 {
-    MOZ_CRASH("NYI");
+    MOZ_ASSERT(ins->mir()->hasUses());
+    MOZ_ASSERT(ins->addrTemp()->isBogusTemp());
+
+    MAsmJSAtomicBinopHeap* mir = ins->mir();
+    Scalar::Type vt = mir->accessType();
+    Register ptrReg = ToRegister(ins->ptr());
+    Register temp = ins->temp()->isBogusTemp() ? InvalidReg : ToRegister(ins->temp());
+    const LAllocation* value = ins->value();
+    AtomicOp op = mir->operation();
+
+    BaseIndex srcAddr(HeapReg, ptrReg, TimesOne);
+
+    Label rejoin;
+    uint32_t maybeCmpOffset = 0;
+    if (mir->needsBoundsCheck()) {
+        Label goahead;
+        BufferOffset bo = masm.ma_BoundsCheck(ScratchRegister);
+        Register out = ToRegister(ins->output());
+        maybeCmpOffset = bo.getOffset();
+        masm.ma_b(ptrReg, ScratchRegister, &goahead, Assembler::Below);
+        memoryBarrier(MembarFull);
+        masm.ma_xor(out, out);
+        masm.ma_b(&rejoin);
+        masm.bind(&goahead);
+    }
+    if (value->isConstant())
+        masm.atomicBinopToTypedIntArray(op, vt == Scalar::Uint32 ? Scalar::Int32 : vt,
+                                        Imm32(ToInt32(value)), srcAddr, temp, InvalidReg,
+                                        ToAnyRegister(ins->output()));
+    else
+        masm.atomicBinopToTypedIntArray(op, vt == Scalar::Uint32 ? Scalar::Int32 : vt,
+                                        ToRegister(value), srcAddr, temp, InvalidReg,
+                                        ToAnyRegister(ins->output()));
+    if (rejoin.used()) {
+        masm.bind(&rejoin);
+        masm.append(AsmJSHeapAccess(maybeCmpOffset));
+    }
 }
 
 void
