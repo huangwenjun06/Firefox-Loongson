@@ -3797,7 +3797,7 @@ MacroAssemblerMIPS64Compat::atomicFetchOpMIPSr2(int nbytes, bool signExtend, Ato
 void
 MacroAssemblerMIPS64Compat::atomicEffectOp(int nbytes, AtomicOp op, const Imm32& value, const Address& address)
 {
-    AllocatableGeneralRegisterSet regs(GeneralRegisterSet(Registers::VolatileMask));
+    AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
 
     regs.take(address.base);
     ma_li(SecondScratchReg, value);
@@ -3808,7 +3808,7 @@ MacroAssemblerMIPS64Compat::atomicEffectOp(int nbytes, AtomicOp op, const Imm32&
 void
 MacroAssemblerMIPS64Compat::atomicEffectOp(int nbytes, AtomicOp op, const Imm32& value, const BaseIndex& address)
 {
-    AllocatableGeneralRegisterSet regs(GeneralRegisterSet(Registers::VolatileMask));
+    AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
 
     regs.take(address.base);
     regs.take(address.index);
@@ -3820,7 +3820,7 @@ MacroAssemblerMIPS64Compat::atomicEffectOp(int nbytes, AtomicOp op, const Imm32&
 void
 MacroAssemblerMIPS64Compat::atomicEffectOp(int nbytes, AtomicOp op, const Register& value, const Address& address)
 {
-    AllocatableGeneralRegisterSet regs(GeneralRegisterSet(Registers::VolatileMask));
+    AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
 
     regs.take(value);
     regs.take(address.base);
@@ -3831,7 +3831,7 @@ MacroAssemblerMIPS64Compat::atomicEffectOp(int nbytes, AtomicOp op, const Regist
 void
 MacroAssemblerMIPS64Compat::atomicEffectOp(int nbytes, AtomicOp op, const Register& value, const BaseIndex& address)
 {
-    AllocatableGeneralRegisterSet regs(GeneralRegisterSet(Registers::VolatileMask));
+    AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
 
     regs.take(value);
     regs.take(address.base);
