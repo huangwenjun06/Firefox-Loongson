@@ -520,7 +520,17 @@ LIRGeneratorMIPS64::visitCompareExchangeTypedArrayElement(MCompareExchangeTypedA
 void
 LIRGeneratorMIPS64::visitAsmJSCompareExchangeHeap(MAsmJSCompareExchangeHeap* ins)
 {
-    MOZ_CRASH("NYI");
+    MOZ_ASSERT(ins->accessType() < Scalar::Float32);
+
+    MDefinition* ptr = ins->ptr();
+    MOZ_ASSERT(ptr->type() == MIRType_Int32);
+
+    LAsmJSCompareExchangeHeap* lir =
+        new(alloc()) LAsmJSCompareExchangeHeap(useRegister(ptr),
+                                               useRegister(ins->oldValue()),
+                                               useRegister(ins->newValue()));
+
+    define(lir, ins);
 }
 
 void
