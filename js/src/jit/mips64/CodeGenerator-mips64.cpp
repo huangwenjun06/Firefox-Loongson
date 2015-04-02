@@ -2171,3 +2171,9 @@ CodeGeneratorMIPS64::visitNegF(LNegF* ins)
 
     masm.as_negs(output, input);
 }
+
+void
+CodeGeneratorMIPS64::memoryBarrier(MemoryBarrierBits barrier)
+{
+    masm.as_sync();
+}

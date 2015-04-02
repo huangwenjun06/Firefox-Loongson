@@ -246,6 +246,8 @@ class CodeGeneratorMIPS64 : public CodeGeneratorShared
     // Functions for LTestVAndBranch.
     Register splitTagForTest(const ValueOperand& value);
 
+    void memoryBarrier(MemoryBarrierBits barrier);
+
   public:
     CodeGeneratorMIPS64(MIRGenerator* gen, LIRGraph* graph, MacroAssembler* masm);
 
