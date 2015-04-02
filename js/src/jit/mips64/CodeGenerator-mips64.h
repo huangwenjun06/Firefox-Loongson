@@ -279,6 +279,8 @@ class CodeGeneratorMIPS64 : public CodeGeneratorShared
 
     void visitAsmJSPassStackArg(LAsmJSPassStackArg* ins);
 
+    void visitMemoryBarrier(LMemoryBarrier* ins);
+
     void generateInvalidateEpilogue();
 
   protected:

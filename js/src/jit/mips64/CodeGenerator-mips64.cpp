@@ -2185,3 +2185,9 @@ CodeGeneratorMIPS64::memoryBarrier(MemoryBarrierBits barrier)
 {
     masm.as_sync();
 }
+
+void
+CodeGeneratorMIPS64::visitMemoryBarrier(LMemoryBarrier* ins)
+{
+    memoryBarrier(ins->type());
+}
