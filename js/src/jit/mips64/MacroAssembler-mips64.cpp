@@ -3799,7 +3799,7 @@ MacroAssemblerMIPS64Compat::atomicEffectOp(int nbytes, AtomicOp op, const Imm32&
 {
     AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
 
-    regs.take(address.base);
+    regs.takeUnchecked(address.base);
     ma_li(SecondScratchReg, value);
     computeEffectiveAddress(address, ScratchRegister);
     atomicEffectOpMIPSr2(nbytes, op, SecondScratchReg, ScratchRegister, regs);
@@ -3810,8 +3810,8 @@ MacroAssemblerMIPS64Compat::atomicEffectOp(int nbytes, AtomicOp op, const Imm32&
 {
     AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
 
-    regs.take(address.base);
-    regs.take(address.index);
+    regs.takeUnchecked(address.base);
+    regs.takeUnchecked(address.index);
     ma_li(SecondScratchReg, value);
     computeEffectiveAddress(address, ScratchRegister);
     atomicEffectOpMIPSr2(nbytes, op, SecondScratchReg, ScratchRegister, regs);
@@ -3822,8 +3822,8 @@ MacroAssemblerMIPS64Compat::atomicEffectOp(int nbytes, AtomicOp op, const Regist
 {
     AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
 
-    regs.take(value);
-    regs.take(address.base);
+    regs.takeUnchecked(value);
+    regs.takeUnchecked(address.base);
     computeEffectiveAddress(address, ScratchRegister);
     atomicEffectOpMIPSr2(nbytes, op, value, ScratchRegister, regs);
 }
@@ -3833,9 +3833,9 @@ MacroAssemblerMIPS64Compat::atomicEffectOp(int nbytes, AtomicOp op, const Regist
 {
     AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
 
-    regs.take(value);
-    regs.take(address.base);
-    regs.take(address.index);
+    regs.takeUnchecked(value);
+    regs.takeUnchecked(address.base);
+    regs.takeUnchecked(address.index);
     computeEffectiveAddress(address, ScratchRegister);
     atomicEffectOpMIPSr2(nbytes, op, value, ScratchRegister, regs);
 }
@@ -3846,9 +3846,9 @@ MacroAssemblerMIPS64Compat::atomicFetchOp(int nbytes, bool signExtend, AtomicOp 
 {
     AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
 
-    regs.take(temp);
-    regs.take(output);
-    regs.take(address.base);
+    regs.takeUnchecked(temp);
+    regs.takeUnchecked(output);
+    regs.takeUnchecked(address.base);
     ma_li(SecondScratchReg, value);
     computeEffectiveAddress(address, ScratchRegister);
     atomicFetchOpMIPSr2(nbytes, signExtend, op, SecondScratchReg, ScratchRegister, temp, output, regs);
@@ -3860,10 +3860,10 @@ MacroAssemblerMIPS64Compat::atomicFetchOp(int nbytes, bool signExtend, AtomicOp 
 {
     AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
 
-    regs.take(temp);
-    regs.take(output);
-    regs.take(address.base);
-    regs.take(address.index);
+    regs.takeUnchecked(temp);
+    regs.takeUnchecked(output);
+    regs.takeUnchecked(address.base);
+    regs.takeUnchecked(address.index);
     ma_li(SecondScratchReg, value);
     computeEffectiveAddress(address, ScratchRegister);
     atomicFetchOpMIPSr2(nbytes, signExtend, op, SecondScratchReg, ScratchRegister, temp, output, regs);
@@ -3875,10 +3875,10 @@ MacroAssemblerMIPS64Compat::atomicFetchOp(int nbytes, bool signExtend, AtomicOp 
 {
     AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
 
-    regs.take(value);
-    regs.take(temp);
-    regs.take(output);
-    regs.take(address.base);
+    regs.takeUnchecked(value);
+    regs.takeUnchecked(temp);
+    regs.takeUnchecked(output);
+    regs.takeUnchecked(address.base);
     computeEffectiveAddress(address, ScratchRegister);
     atomicFetchOpMIPSr2(nbytes, signExtend, op, value, ScratchRegister, temp, output, regs);
 }
@@ -3889,11 +3889,11 @@ MacroAssemblerMIPS64Compat::atomicFetchOp(int nbytes, bool signExtend, AtomicOp 
 {
     AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
 
-    regs.take(value);
-    regs.take(temp);
-    regs.take(output);
-    regs.take(address.base);
-    regs.take(address.index);
+    regs.takeUnchecked(value);
+    regs.takeUnchecked(temp);
+    regs.takeUnchecked(output);
+    regs.takeUnchecked(address.base);
+    regs.takeUnchecked(address.index);
     computeEffectiveAddress(address, ScratchRegister);
     atomicFetchOpMIPSr2(nbytes, signExtend, op, value, ScratchRegister, temp, output, regs);
 }
