@@ -1110,7 +1110,7 @@ class Assembler : public AssemblerShared
     void call(void* target);
 
     void as_break(uint32_t code);
-    void as_sync(uint32_t stype);
+    void as_sync(uint32_t stype = 0);
 
   public:
     static void TraceJumpRelocations(JSTracer* trc, JitCode* code, CompactBufferReader& reader);
