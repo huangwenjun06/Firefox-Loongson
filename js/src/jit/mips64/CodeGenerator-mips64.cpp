@@ -1959,6 +1959,7 @@ CodeGeneratorMIPS64::visitAsmJSStoreHeap(LAsmJSStoreHeap* ins)
       default: MOZ_CRASH("unexpected array type");
     }
 
+    memoryBarrier(mir->barrierBefore());
     if (ptr->isConstant()) {
         MOZ_ASSERT(!mir->needsBoundsCheck());
         int32_t ptrImm = ptr->toConstant()->toInt32();
@@ -1974,6 +1975,7 @@ CodeGeneratorMIPS64::visitAsmJSStoreHeap(LAsmJSStoreHeap* ins)
             masm.ma_store(ToRegister(value), Address(HeapReg, ptrImm),
                           static_cast<LoadStoreSize>(size), isSigned ? SignExtend : ZeroExtend);
         }
+        memoryBarrier(mir->barrierAfter());
         return;
     }
 
@@ -1990,6 +1992,7 @@ CodeGeneratorMIPS64::visitAsmJSStoreHeap(LAsmJSStoreHeap* ins)
             masm.ma_store(ToRegister(value), BaseIndex(HeapReg, ptrReg, TimesOne),
                           static_cast<LoadStoreSize>(size), isSigned ? SignExtend : ZeroExtend);
         }
+        memoryBarrier(mir->barrierAfter());
         return;
     }
 
@@ -2010,6 +2013,7 @@ CodeGeneratorMIPS64::visitAsmJSStoreHeap(LAsmJSStoreHeap* ins)
     }
     masm.bind(&rejoin);
 
+    memoryBarrier(mir->barrierAfter());
     masm.append(AsmJSHeapAccess(bo.getOffset()));
 }
 
