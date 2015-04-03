@@ -1791,7 +1791,7 @@ Android)
     ;;
 Linux)
     case "${CPU_ARCH}" in
-    x86 | x86_64) ;;
+    x86 | x86_64 | mips) ;;
     *)
         MOZ_ENABLE_PROFILER_SPS=
     esac
