@@ -1103,6 +1103,8 @@ static const bool config_recycle = false;
 #define pagesize_2pow			((size_t) 13)
 #elif defined(__powerpc64__) || defined(__aarch64__)
 #define pagesize_2pow			((size_t) 16)
+#elif defined(__mips_loongson_vector_rev)
+#define pagesize_2pow					((size_t) 14)
 #else
 #define pagesize_2pow			((size_t) 12)
 #endif
