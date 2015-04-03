@@ -1197,7 +1197,7 @@ arm*)
     CPU_ARCH=arm
     ;;
 
-mips|mipsel)
+mips|mipsel|mips64|mips64el)
     CPU_ARCH="mips"
     ;;
 
