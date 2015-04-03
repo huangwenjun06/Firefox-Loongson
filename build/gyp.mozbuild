@@ -100,6 +100,7 @@ gyp_vars['OS'] = flavors.get(os)
 arches = {
     'x86_64': 'x64',
     'x86': 'ia32',
+    'mips': 'mips',
 }
 
 gyp_vars['target_arch'] = arches.get(CONFIG['CPU_ARCH'], CONFIG['CPU_ARCH'])

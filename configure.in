@@ -5093,9 +5093,9 @@ AC_TRY_COMPILE([#include <linux/ethtool.h>],
 
 AC_SUBST(MOZ_WEBRTC_HAVE_ETHTOOL_SPEED_HI)
 
-# target_arch is from {ia32|x64|arm|ppc}
+# target_arch is from {ia32|x64|arm|ppc|mips*}
 case "$CPU_ARCH" in
-x86_64 | arm | x86 | ppc* | ia64)
+x86_64 | arm | x86 | ppc* | ia64 | mips*)
     :
     ;;
 *)
