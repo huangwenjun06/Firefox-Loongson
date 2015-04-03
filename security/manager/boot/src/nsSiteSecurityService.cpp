@@ -95,7 +95,7 @@ void
 SiteHSTSState::ToString(nsCString& aString)
 {
   aString.Truncate();
-  aString.AppendInt(mHSTSExpireTime);
+  aString.AppendInt(static_cast<int64_t>(mHSTSExpireTime));
   aString.Append(',');
   aString.AppendInt(mHSTSState);
   aString.Append(',');
@@ -199,7 +199,7 @@ void
 SiteHPKPState::ToString(nsCString& aString)
 {
   aString.Truncate();
-  aString.AppendInt(mExpireTime);
+  aString.AppendInt(static_cast<int64_t>(mExpireTime));
   aString.Append(',');
   aString.AppendInt(mState);
   aString.Append(',');
