@@ -50,6 +50,14 @@ typedef uint32_t uint32;
 #define ARCH_CPU_AARCH64_FAMILY 1
 #define ARCH_CPU_AARCH64 1
 #define ARCH_CPU_64_BITS 1
+#elif defined(mips) || defined(__mips__) || defined(MIPS) || defined(_MIPS_) 
+#define ARCH_CPU_MIPS 1
+#define ARCH_CPU_MIPS_FAMILY 1
+#define ARCH_CPU_MIPS_32 1
+#define ARCH_CPU_32_BITS 1
+#elif defined(__mips64)
+#define ARCH_CPU_MIPS_64 1
+#define ARCH_CPU_64_BITS 1
 #else
 #warning Please add support for your architecture in chromium_types.h
 #endif
