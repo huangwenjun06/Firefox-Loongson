@@ -514,7 +514,32 @@ LIRGeneratorMIPS64::visitSimdValueX4(MSimdValueX4* ins)
 void
 LIRGeneratorMIPS64::visitCompareExchangeTypedArrayElement(MCompareExchangeTypedArrayElement* ins)
 {
-    MOZ_CRASH("NYI");
+    MOZ_ASSERT(ins->arrayType() != Scalar::Float32);
+    MOZ_ASSERT(ins->arrayType() != Scalar::Float64);
+
+    MOZ_ASSERT(ins->elements()->type() == MIRType_Elements);
+    MOZ_ASSERT(ins->index()->type() == MIRType_Int32);
+
+    const LUse elements = useRegister(ins->elements());
+    const LAllocation index = useRegisterOrConstant(ins->index());
+
+    // If the target is a floating register then we need a temp at the
+    // CodeGenerator level for creating the result.
+    //
+    // Optimization opportunity (bug 1077317): We could do better by
+    // allowing oldval to remain an immediate, if it is small enough
+    // to fit in an instruction.
+
+    const LAllocation newval = useRegister(ins->newval());
+    const LAllocation oldval = useRegister(ins->oldval());
+    LDefinition tempDef = LDefinition::BogusTemp();
+    if (ins->arrayType() == Scalar::Uint32 && IsFloatingPointType(ins->type()))
+        tempDef = temp();
+
+    LCompareExchangeTypedArrayElement* lir =
+        new(alloc()) LCompareExchangeTypedArrayElement(elements, index, oldval, newval, tempDef);
+
+    define(lir, ins);
 }
 
 void
