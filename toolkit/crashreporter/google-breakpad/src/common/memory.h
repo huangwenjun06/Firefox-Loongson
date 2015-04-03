@@ -35,7 +35,7 @@
 #include <unistd.h>
 #include <sys/mman.h>
 
-#ifdef __APPLE__
+#ifdef __APPLE__ || defined(__mips64)
 #define sys_mmap mmap
 #define sys_mmap2 mmap
 #define sys_munmap munmap
