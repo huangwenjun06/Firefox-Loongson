@@ -7954,7 +7954,7 @@ if test "${OS_TARGET}" = "WINNT" -o \
         "${MOZ_WIDGET_TOOLKIT}" = "gtk2" -o \
         "${MOZ_WIDGET_TOOLKIT}" = "gtk3"; then
     case "${CPU_ARCH}" in
-    x86|x86_64|arm)
+    x86|x86_64|arm|mips)
         MOZ_ENABLE_SKIA=1
         ;;
     *)
