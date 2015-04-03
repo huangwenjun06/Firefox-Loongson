@@ -6,6 +6,10 @@
 #define BASE_DIR_READER_LINUX_H_
 #pragma once
 
+#ifdef ARCH_CPU_64_BITS
+#define __NR_getdents64         (__NR_Linux + 308)
+#endif
+
 #include <errno.h>
 #include <fcntl.h>
 #include <stdint.h>

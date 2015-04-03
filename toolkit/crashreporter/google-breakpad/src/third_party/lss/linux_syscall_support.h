@@ -1164,6 +1164,9 @@ struct kernel_statfs {
 #ifndef __NR_ioprio_get
 #define __NR_ioprio_get         (__NR_Linux + 274)
 #endif
+#ifndef __NR_getdents64
+#define __NR_getdents64         (__NR_Linux + 308)
+#endif
 /* End of MIPS (64bit API) definitions */
 #else
 #ifndef __NR_setresuid
