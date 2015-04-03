@@ -37,6 +37,8 @@
 #define _PR_SI_ARCHITECTURE "sparc"
 #elif defined(__i386__)
 #define _PR_SI_ARCHITECTURE "x86"
+#elif defined(__mips64)
+#define _PR_SI_ARCHITECTURE "mips64"
 #elif defined(__mips__)
 #define _PR_SI_ARCHITECTURE "mips"
 #elif defined(__arm__)
@@ -414,8 +416,20 @@ extern void _MD_CleanupBeforeExit(void);
 #endif /* defined(__GLIBC__) && __GLIBC__ >= 2 */
 #define PR_NUM_GCREGS   6
 
+#elif defined(__mips64)
+/* Linux/MIPS n32 n64 */
+#if defined(__GLIBC__) && __GLIBC__ >= 2
+#define _MD_GET_SP(_t) (_t)->md.context[0].__jmpbuf[0].__sp
+#define _MD_SET_FP(_t, val) ((_t)->md.context[0].__jmpbuf[0].__fp = (val))
+#define _MD_GET_SP_PTR(_t) &(_MD_GET_SP(_t))
+#define _MD_GET_FP_PTR(_t) (&(_t)->md.context[0].__jmpbuf[0].__fp)
+#define _MD_SP_TYPE long long
+#else
+#error "Linux/MIPS pre-glibc2 not supported yet"
+#endif /* defined(__GLIBC__) && __GLIBC__ >= 2 */
+
 #elif defined(__mips__)
-/* Linux/MIPS */
+/* Linux/MIPS o32*/
 #if defined(__GLIBC__) && __GLIBC__ >= 2
 #define _MD_GET_SP(_t) (_t)->md.context[0].__jmpbuf[0].__sp
 #define _MD_SET_FP(_t, val) ((_t)->md.context[0].__jmpbuf[0].__fp = (val))
@@ -496,12 +510,12 @@ extern void _MD_CleanupBeforeExit(void);
 }
 
 #elif defined(__mips__)
-
++/* Linux/MIPS o32 n32 n64 */
 #define _MD_INIT_CONTEXT(_thread, _sp, _main, status)  \
 {  \
     *status = PR_TRUE;  \
     (void) sigsetjmp(CONTEXT(_thread), 1);  \
-    _thread->md.context[0].__jmpbuf[0].__pc = (__ptr_t) _main;  \
+    _thread->md.context[0].__jmpbuf[0].__pc = (_MD_SP_TYPE) _main;  \
     _MD_GET_SP(_thread) = (_MD_SP_TYPE) ((_sp) - 64); \
     _thread->md.sp = _MD_GET_SP_PTR(_thread); \
     _thread->md.fp = _MD_GET_FP_PTR(_thread); \
