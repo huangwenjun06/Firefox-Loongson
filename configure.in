@@ -1791,7 +1791,7 @@ Android)
     ;;
 Linux)
     case "${CPU_ARCH}" in
-    x86 | x86_64 | mips) ;;
+    x86 | x86_64) ;;
     *)
         MOZ_ENABLE_PROFILER_SPS=
     esac
@@ -5749,7 +5749,7 @@ MOZ_ARG_DISABLE_BOOL(system-extension-dirs,
 [  --disable-system-extension-dirs
                           Disable searching system- and account-global
                           directories for extensions of any kind; use
-                          only profile-specific extension directories],
+                          only nrofile-specific extension directories],
   ENABLE_SYSTEM_EXTENSION_DIRS=,
   ENABLE_SYSTEM_EXTENSION_DIRS=1 )
 if test "$ENABLE_SYSTEM_EXTENSION_DIRS"; then
