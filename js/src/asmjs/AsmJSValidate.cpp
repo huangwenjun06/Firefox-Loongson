@@ -9409,7 +9409,7 @@ EstablishPreconditions(ExclusiveContext* cx, AsmJSParser& parser)
         return Warn(parser, JSMSG_USE_ASM_TYPE_FAIL, "Disabled by lack of floating point support");
 
     if (cx->gcSystemPageSize() != AsmJSPageSize)
-        return Warn(parser, JSMSG_USE_ASM_TYPE_FAIL, "Disabled by non 4KiB system page size");
+        return Warn(parser, JSMSG_USE_ASM_TYPE_FAIL, "Disabled by unsupported system page size");
 
     if (!parser.options().asmJSOption)
         return Warn(parser, JSMSG_USE_ASM_TYPE_FAIL, "Disabled by javascript.options.asmjs in about:config");
