@@ -14,6 +14,7 @@
 
 #undef SPS_PLAT_arm_android
 #undef SPS_PLAT_amd64_linux
+#undef SPS_PLAT_mips64_linux
 #undef SPS_PLAT_x86_linux
 #undef SPS_PLAT_amd64_darwin
 #undef SPS_PLAT_x86_darwin
@@ -23,6 +24,7 @@
 #undef SPS_ARCH_arm
 #undef SPS_ARCH_x86
 #undef SPS_ARCH_amd64
+#undef SPS_ARCH_mips64
 
 #undef SPS_OS_android
 #undef SPS_OS_linux
@@ -32,6 +34,11 @@
 #if defined(__linux__) && defined(__x86_64__)
 #  define SPS_PLAT_amd64_linux 1
 #  define SPS_ARCH_amd64 1
+#  define SPS_OS_linux 1
+
+#elif defined(__linux__) && defined(__mips64)
+#  define SPS_PLAT_mips64_linux 1
+#  define SPS_ARCH_mips64 1
 #  define SPS_OS_linux 1
 
 #elif defined(__ANDROID__) && defined(__arm__)

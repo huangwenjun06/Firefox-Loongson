@@ -16,7 +16,8 @@
 #include "common/logging.h"
 
 #if defined(SPS_PLAT_amd64_linux) || defined(SPS_PLAT_arm_android) \
-    || defined(SPS_PLAT_x86_linux) || defined(SPS_PLAT_x86_android)
+    || defined(SPS_PLAT_x86_linux) || defined(SPS_PLAT_x86_android) \
+    || defined(SPS_PLAT_mips64_linux)
 # include "common/linux/dump_symbols.h"
 #elif defined(SPS_PLAT_amd64_darwin) || defined(SPS_PLAT_x86_darwin)
 # include "shim_mac_dump_syms.h"
