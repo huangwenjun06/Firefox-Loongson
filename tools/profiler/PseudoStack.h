@@ -15,12 +15,14 @@
 
 /* we duplicate this code here to avoid header dependencies
  * which make it more difficult to include in other places */
-#if defined(_M_X64) || defined(__x86_64__) || defined(__mips64)
+#if defined(_M_X64) || defined(__x86_64__)
 #define V8_HOST_ARCH_X64 1
 #elif defined(_M_IX86) || defined(__i386__) || defined(__i386)
 #define V8_HOST_ARCH_IA32 1
 #elif defined(__ARMEL__)
 #define V8_HOST_ARCH_ARM 1
+#elif defined(__mips64) 
+#define V8_HOST_ARCH_MIPS64 1
 #else
 #warning Please add support for your architecture in chromium_types.h
 #endif
@@ -38,7 +40,7 @@ LinuxKernelMemoryBarrierFunc pLinuxKernelMemoryBarrier __attribute__((weak)) =
     (LinuxKernelMemoryBarrierFunc) 0xffff0fa0;
 
 # define STORE_SEQUENCER() pLinuxKernelMemoryBarrier()
-#elif defined(V8_HOST_ARCH_IA32) || defined(V8_HOST_ARCH_X64)
+#elif defined(V8_HOST_ARCH_IA32) || defined(V8_HOST_ARCH_X64) || defined(V8_HOST_ARCH_MIPS64)
 # if defined(_MSC_VER)
 #  include <intrin.h>
 #  define STORE_SEQUENCER() _ReadWriteBarrier();

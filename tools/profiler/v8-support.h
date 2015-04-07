@@ -14,13 +14,15 @@
 #define V8_HOST_ARCH_IA32 1
 #elif defined(__ARMEL__)
 #define V8_HOST_ARCH_ARM 1
+#elif defined(__mips64)
+#define V8_HOST_ARCH_MIPS64 1
 #else
 #warning Please add support for your architecture in chromium_types.h
 #endif
 
 typedef int32_t Atomic32;
 
-#if defined(V8_HOST_ARCH_X64) || defined(V8_HOST_ARCH_IA32) || defined(V8_HOST_ARCH_ARM)
+#if defined(V8_HOST_ARCH_X64) || defined(V8_HOST_ARCH_IA32) || defined(V8_HOST_ARCH_ARM) || defined(V8_HOST_ARCH_MIPS64)
 inline void NoBarrier_Store(volatile Atomic32* ptr, Atomic32 value) {
   *ptr = value;
 }

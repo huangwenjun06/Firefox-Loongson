@@ -200,7 +200,7 @@ static void SetSampleContext(TickSample* sample, void* context)
   sample->lr = reinterpret_cast<Address>(mcontext.arm_lr);
 #endif
 #endif
-#elif V8_HOST_ARCH_MIPS
+#elif V8_HOST_ARCH_MIPS64
   // Implement this on MIPS.
   UNIMPLEMENTED();
 #endif
