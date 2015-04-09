@@ -51,6 +51,7 @@
 
 #include "js/TypeDecls.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/GuardObjects.h"
 
 namespace mozilla {
 class TimeStamp;
