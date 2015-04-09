@@ -16,8 +16,9 @@
 #include "nsContainerFrame.h"
 #include "mozilla/SplayTree.h"
 #include "mozilla/RestyleLogging.h"
-#include "ProfilerBacktrace.h"
+
 #include "GeckoProfiler.h"
+#include "ProfilerBacktrace.h"
 
 namespace mozilla {
 

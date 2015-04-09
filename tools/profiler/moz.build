@@ -109,6 +109,7 @@ if CONFIG['MOZ_ENABLE_PROFILER_SPS']:
 
 EXPORTS += [
     'GeckoProfiler.h',
+    'ProfilerBacktrace.h',
 ]
 
 if CONFIG['MOZ_TASK_TRACER']:
