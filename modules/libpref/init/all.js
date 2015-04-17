@@ -653,8 +653,8 @@ pref("gfx.canvas.azure.backends", "cg");
 // Accelerated cg canvas where available (10.7+)
 pref("gfx.canvas.azure.accelerated", false);
 #else
-pref("gfx.canvas.azure.backends", "cairo");
-pref("gfx.content.azure.backends", "cairo");
+pref("gfx.canvas.azure.backends", "cairo,skia");
+pref("gfx.content.azure.backends", "cairo,skia");
 #endif
 #endif
 
