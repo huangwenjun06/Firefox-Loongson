@@ -3907,12 +3907,12 @@ pref("gl.msaa-level", 0);
 #else
 pref("gl.msaa-level", 2);
 #endif
-pref("webgl.force-enabled", false);
+pref("webgl.force-enabled", true);
 pref("webgl.disabled", false);
 pref("webgl.disable-angle", false);
 pref("webgl.min_capability_mode", false);
 pref("webgl.disable-extensions", false);
-pref("webgl.msaa-force", false);
+pref("webgl.msaa-force", true);
 pref("webgl.prefer-16bpp", false);
 pref("webgl.default-no-alpha", false);
 pref("webgl.force-layers-readback", false);
@@ -3970,7 +3970,7 @@ pref("layers.bench.enabled", false);
 // means a startup crash for everyone.
 pref("layers.acceleration.force-enabled", true);
 #else
-pref("layers.acceleration.force-enabled", false);
+pref("layers.acceleration.force-enabled", true);
 #endif
 
 pref("layers.acceleration.draw-fps", false);
@@ -4068,7 +4068,7 @@ pref("gfx.direct2d.use1_1", true);
 
 // Whether to attempt to enable Direct2D regardless of automatic detection or
 // blacklisting
-pref("gfx.direct2d.force-enabled", false);
+pref("gfx.direct2d.force-enabled", true);
 
 pref("layers.prefer-opengl", false);
 pref("layers.prefer-d3d9", false);
