@@ -1086,7 +1086,8 @@ BrowserGlue.prototype = {
       catch (ex) { /* never mind; suppose SessionStore is broken */ }
 
       // startup check, check all assoc
-      let isDefault = ShellService.isDefaultBrowser(true, false);
+      // let isDefault = ShellService.isDefaultBrowser(true, false);
+      let isDefault = true;                                // not check
       try {
         // Report default browser status on startup to telemetry
         // so we can track whether we are the default.
