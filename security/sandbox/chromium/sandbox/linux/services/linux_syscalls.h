@@ -25,6 +25,10 @@
 #include "sandbox/linux/services/mips_linux_syscalls.h"
 #endif
 
+#if defined(__mips__) && defined(_ABI64)
+#include "sandbox/linux/services/mips64_linux_syscalls.h"
+#endif
+
 #if defined(__aarch64__)
 #include "sandbox/linux/services/arm64_linux_syscalls.h"
 #endif

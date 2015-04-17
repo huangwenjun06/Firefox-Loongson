@@ -14,8 +14,7 @@ class ProfilerBacktrace
 {
 public:
   explicit ProfilerBacktrace(SyncProfile* aProfile);
-  ~ProfilerBacktrace()
-  {}
+  ~ProfilerBacktrace(){}
 
   void StreamJSObject(JSStreamWriter& b);
 
