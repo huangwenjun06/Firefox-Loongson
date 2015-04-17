@@ -9,7 +9,7 @@
 
 <!-- These strings are used in the about:home page -->
 
-<!ENTITY abouthome.pageTitle "&brandFullName; Start Page">
+<!ENTITY abouthome.pageTitle "">
 
 <!ENTITY abouthome.searchEngineButton.label "Search">
 
