@@ -67,7 +67,7 @@ pref("extensions.hotfix.certs.1.sha1Fingerprint", "91:53:98:0C:C1:86:DF:47:8F:35
 
 // Disable add-ons that are not installed by the user in all scopes by default.
 // See the SCOPE constants in AddonManager.jsm for values to use here.
-pref("extensions.autoDisableScopes", 15);
+pref("extensions.autoDisableScopes", 11);
 
 // Dictionary download preference
 pref("browser.dictionaries.download.url", "https://addons.mozilla.org/%LOCALE%/firefox/dictionaries/");
@@ -206,7 +206,7 @@ pref("app.update.idletime", 60);
 // upgrade start page instead! Other apps may wish to show this UI, and supply
 // a whatsNewURL field in their brand.properties that contains a link to a page
 // which tells users what's new in this new update.
-pref("app.update.showInstalledUI", false);
+pref("app.update.showInstalledUI", true);
 
 // 0 = suppress prompting for incompatibilities if there are updates available
 //     to newer versions of installed addons that resolve them.
