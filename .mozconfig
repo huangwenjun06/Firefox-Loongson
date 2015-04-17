@@ -1,0 +1,37 @@
+export LDFLAGS="-Wl,--no-keep-memory"
+
+ac_add_options --enable-application=browser
+ac_add_options --prefix=/opt/firefox40
+ac_add_options --disable-updater
+ac_add_options --with-pthreads
+ac_add_options --disable-gstreamer
+ac_add_options --enable-jemalloc
+ac_add_options --with-mips-abi=64
+ac_add_options --with-arch=mips64
+ac_add_options --disable-debug
+ac_add_options --enable-optimize="-O3 -fno-omit-frame-pointer -mno-branch-likely"
+ac_add_options --enable-official-branding
+ac_add_options --with-system-jpeg
+ac_add_options --with-system-zlib
+ac_add_options --with-system-bz2
+ac_add_options --enable-system-hunspell
+ac_add_options --disable-strip
+ac_add_options --disable-install-strip
+ac_add_options --enable-tests
+ac_add_options --enable-mochitest
+ac_add_options --enable-installer
+ac_add_options --enable-xinerama
+ac_add_options --enable-default-toolkit=cairo-gtk2
+ac_add_options --enable-pango
+ac_add_options --enable-svg
+ac_add_options --enable-canvas
+ac_add_options --disable-javaxpcom
+ac_add_options --enable-safe-browsing
+ac_add_options --enable-libnotify
+ac_add_options --disable-necko-wifi
+ac_add_options --enable-startup-notification
+ac_add_options --disable-cpp-exceptions
+ac_add_options --enable-url-classifier
+ac_add_options --enable-gio
+ac_add_options --disable-gnomevfs
+ac_add_options --enable-chrome-format=omni
