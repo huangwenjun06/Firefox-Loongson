@@ -12,12 +12,15 @@ set -e
 # Main tests
 
 LOOPDIR=browser/components/loop
-#ESLINT=standalone/node_modules/.bin/eslint
-#if [ -x "${LOOPDIR}/${ESLINT}" ]; then
-#  echo 'running eslint; see http://eslint.org/docs/rules/ for error info'
-#  (cd ${LOOPDIR} && ./${ESLINT} .)
-#  echo 'eslint run finished.'
-#fi
+ESLINT=standalone/node_modules/.bin/eslint
+if [ -x "${LOOPDIR}/${ESLINT}" ]; then
+  echo 'running eslint; see http://eslint.org/docs/rules/ for error info'
+  (cd ${LOOPDIR} && ./${ESLINT} --ext .js --ext .jsm --ext .jsx .)
+  if [ $? != 0 ]; then
+    exit 1;
+  fi
+  echo 'eslint run finished.'
+fi
 
 ./mach xpcshell-test ${LOOPDIR}/
 ./mach marionette-test ${LOOPDIR}/manifest.ini
@@ -30,7 +33,7 @@ LOOPDIR=browser/components/loop
 
 TESTS="
   ${LOOPDIR}/test/mochitest
-  browser/modules/test/browser_UITour_loop.js
+  browser/components/uitour/test/browser_UITour_loop.js
   browser/base/content/test/general/browser_devices_get_user_media_about_urls.js
 "
 

@@ -10,12 +10,25 @@
 
 namespace mozilla {
 
-MediaTaskQueue::MediaTaskQueue(TemporaryRef<SharedThreadPool> aPool)
+ThreadLocal<MediaTaskQueue*> MediaTaskQueue::sCurrentQueueTLS;
+
+/* static */ void
+MediaTaskQueue::InitStatics()
+{
+  if (!sCurrentQueueTLS.init()) {
+    MOZ_CRASH();
+  }
+}
+
+MediaTaskQueue::MediaTaskQueue(TemporaryRef<SharedThreadPool> aPool,
+                               bool aRequireTailDispatch)
   : mPool(aPool)
   , mQueueMonitor("MediaTaskQueue::Queue")
+  , mTailDispatcher(nullptr)
   , mIsRunning(false)
   , mIsShutdown(false)
   , mIsFlushing(false)
+  , mRequireTailDispatch(aRequireTailDispatch)
 {
   MOZ_COUNT_CTOR(MediaTaskQueue);
 }
@@ -27,32 +40,26 @@ MediaTaskQueue::~MediaTaskQueue()
   MOZ_COUNT_DTOR(MediaTaskQueue);
 }
 
-nsresult
-MediaTaskQueue::Dispatch(TemporaryRef<nsIRunnable> aRunnable)
+TaskDispatcher&
+MediaTaskQueue::TailDispatcher()
 {
-  MonitorAutoLock mon(mQueueMonitor);
-  return DispatchLocked(aRunnable, AbortIfFlushing);
+  MOZ_ASSERT(IsCurrentThreadIn());
+  MOZ_ASSERT(mTailDispatcher);
+  return *mTailDispatcher;
 }
 
 nsresult
-MediaTaskQueue::ForceDispatch(TemporaryRef<nsIRunnable> aRunnable)
-{
-  MonitorAutoLock mon(mQueueMonitor);
-  return DispatchLocked(aRunnable, Forced);
-}
-
-nsresult
-MediaTaskQueue::DispatchLocked(TemporaryRef<nsIRunnable> aRunnable,
-                               DispatchMode aMode)
+MediaTaskQueue::DispatchLocked(already_AddRefed<nsIRunnable> aRunnable, DispatchMode aMode)
 {
   mQueueMonitor.AssertCurrentThreadOwns();
+  nsCOMPtr<nsIRunnable> r = aRunnable;
   if (mIsFlushing && aMode == AbortIfFlushing) {
     return NS_ERROR_ABORT;
   }
   if (mIsShutdown) {
     return NS_ERROR_FAILURE;
   }
-  mTasks.push(TaskQueueEntry(aRunnable, aMode == Forced));
+  mTasks.push(r.forget());
   if (mIsRunning) {
     return NS_OK;
   }
@@ -86,12 +93,11 @@ public:
     return rv;
   }
 
-  nsresult WaitUntilDone() {
+  void WaitUntilDone() {
     MonitorAutoLock mon(mMonitor);
     while (!mDone) {
       mon.Wait();
     }
-    return NS_OK;
   }
 private:
   RefPtr<nsIRunnable> mRunnable;
@@ -99,12 +105,12 @@ private:
   bool mDone;
 };
 
-nsresult
+void
 MediaTaskQueue::SyncDispatch(TemporaryRef<nsIRunnable> aRunnable) {
+  NS_WARNING("MediaTaskQueue::SyncDispatch is dangerous and deprecated. Stop using this!");
   RefPtr<MediaTaskQueueSyncRunnable> task(new MediaTaskQueueSyncRunnable(aRunnable));
-  nsresult rv = Dispatch(task);
-  NS_ENSURE_SUCCESS(rv, rv);
-  return task->WaitUntilDone();
+  Dispatch(task);
+  task->WaitUntilDone();
 }
 
 void
@@ -159,10 +165,12 @@ FlushableMediaTaskQueue::Flush()
 nsresult
 FlushableMediaTaskQueue::FlushAndDispatch(TemporaryRef<nsIRunnable> aRunnable)
 {
+  AssertInTailDispatchIfNeeded(); // Do this before acquiring the monitor.
   MonitorAutoLock mon(mQueueMonitor);
   AutoSetFlushing autoFlush(this);
   FlushLocked();
-  nsresult rv = DispatchLocked(aRunnable, IgnoreFlushing);
+  nsCOMPtr<nsIRunnable> r = dont_AddRef(aRunnable.take());
+  nsresult rv = DispatchLocked(r.forget(), IgnoreFlushing);
   NS_ENSURE_SUCCESS(rv, rv);
   AwaitIdleLocked();
   return NS_OK;
@@ -174,13 +182,9 @@ FlushableMediaTaskQueue::FlushLocked()
   mQueueMonitor.AssertCurrentThreadOwns();
   MOZ_ASSERT(mIsFlushing);
 
-  // Clear the tasks, but preserve those with mForceDispatch by re-appending
-  // them to the queue.
-  size_t numTasks = mTasks.size();
-  for (size_t i = 0; i < numTasks; ++i) {
-    if (mTasks.front().mForceDispatch) {
-      mTasks.push(mTasks.front());
-    }
+  // Clear the tasks. If this strikes you as awful, stop using a
+  // FlushableMediaTaskQueue.
+  while (!mTasks.empty()) {
     mTasks.pop();
   }
 }
@@ -195,8 +199,9 @@ MediaTaskQueue::IsEmpty()
 bool
 MediaTaskQueue::IsCurrentThreadIn()
 {
-  MonitorAutoLock mon(mQueueMonitor);
-  return NS_GetCurrentThread() == mRunningThread;
+  bool in = NS_GetCurrentThread() == mRunningThread;
+  MOZ_ASSERT_IF(in, GetCurrentQueue() == this);
+  return in;
 }
 
 nsresult
@@ -206,14 +211,13 @@ MediaTaskQueue::Runner::Run()
   {
     MonitorAutoLock mon(mQueue->mQueueMonitor);
     MOZ_ASSERT(mQueue->mIsRunning);
-    mQueue->mRunningThread = NS_GetCurrentThread();
     if (mQueue->mTasks.size() == 0) {
       mQueue->mIsRunning = false;
       mQueue->mShutdownPromise.ResolveIfExists(true, __func__);
       mon.NotifyAll();
       return NS_OK;
     }
-    event = mQueue->mTasks.front().mRunnable;
+    event = mQueue->mTasks.front();
     mQueue->mTasks.pop();
   }
   MOZ_ASSERT(event);
@@ -223,7 +227,10 @@ MediaTaskQueue::Runner::Run()
   // fences enforced. This means that if the object we're calling wasn't
   // designed to be threadsafe, it will be, provided we're only calling it
   // in this task queue.
-  event->Run();
+  {
+    AutoTaskGuard g(mQueue);
+    event->Run();
+  }
 
   // Drop the reference to event. The event will hold a reference to the
   // object it's calling, and we don't want to keep it alive, it may be
@@ -239,7 +246,6 @@ MediaTaskQueue::Runner::Run()
       mQueue->mIsRunning = false;
       mQueue->mShutdownPromise.ResolveIfExists(true, __func__);
       mon.NotifyAll();
-      mQueue->mRunningThread = nullptr;
       return NS_OK;
     }
   }
@@ -249,23 +255,26 @@ MediaTaskQueue::Runner::Run()
   // run in a loop here so that we don't hog the thread pool. This means we may
   // run on another thread next time, but we rely on the memory fences from
   // mQueueMonitor for thread safety of non-threadsafe tasks.
-  {
+  nsresult rv = mQueue->mPool->Dispatch(this, NS_DISPATCH_NORMAL);
+  if (NS_FAILED(rv)) {
+    // Failed to dispatch, shutdown!
     MonitorAutoLock mon(mQueue->mQueueMonitor);
-    // Note: Hold the monitor *before* we dispatch, in case we context switch
-    // to another thread pool in the queue immediately and take the lock in the
-    // other thread; mRunningThread could be set to the new thread's value and
-    // then incorrectly anulled below in that case.
-    nsresult rv = mQueue->mPool->Dispatch(this, NS_DISPATCH_NORMAL);
-    if (NS_FAILED(rv)) {
-      // Failed to dispatch, shutdown!
-      mQueue->mIsRunning = false;
-      mQueue->mIsShutdown = true;
-      mon.NotifyAll();
-    }
-    mQueue->mRunningThread = nullptr;
+    mQueue->mIsRunning = false;
+    mQueue->mIsShutdown = true;
+    mon.NotifyAll();
   }
 
   return NS_OK;
 }
+
+#ifdef DEBUG
+void
+TaskDispatcher::AssertIsTailDispatcherIfRequired()
+{
+  MediaTaskQueue* currentQueue = MediaTaskQueue::GetCurrentQueue();
+  MOZ_ASSERT_IF(currentQueue && currentQueue->RequiresTailDispatch(),
+                this == &currentQueue->TailDispatcher());
+}
+#endif
 
 } // namespace mozilla

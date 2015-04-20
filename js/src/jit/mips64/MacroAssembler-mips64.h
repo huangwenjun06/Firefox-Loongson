@@ -75,6 +75,7 @@ class MacroAssemblerMIPS64 : public Assembler
     void convertBoolToInt32(Register source, Register dest);
     void convertInt32ToDouble(Register src, FloatRegister dest);
     void convertInt32ToDouble(const Address& src, FloatRegister dest);
+    void convertInt32ToDouble(const BaseIndex& src, FloatRegister dest);
     void convertUInt32ToDouble(Register src, FloatRegister dest);
     void convertUInt32ToFloat32(Register src, FloatRegister dest);
     void convertDoubleToFloat32(FloatRegister src, FloatRegister dest);
@@ -992,6 +993,14 @@ public:
     void atomicFetchOp(int nbytes, bool signExtend, AtomicOp op, const Register& value,
                        const BaseIndex& address, Register temp, Register output);
 
+    void compareExchangeMIPSr2(int nbytes, bool signExtend, const Register& addr, Register oldval,
+                         Register newval, Register output, AllocatableGeneralRegisterSet& regs);
+
+    void compareExchange(int nbytes, bool signExtend, const Address& address, Register oldval,
+                         Register newval, Register output);
+    void compareExchange(int nbytes, bool signExtend, const BaseIndex& address, Register oldval,
+                         Register newval, Register output);
+
     /////////////////////////////////////////////////////////////////
     // Common interface.
     /////////////////////////////////////////////////////////////////
@@ -1001,27 +1010,27 @@ public:
     template<typename T>
     void compareExchange8SignExtend(const T& mem, Register oldval, Register newval, Register output)
     {
-        MOZ_CRASH("NYI");
+        compareExchange(1, true, mem, oldval, newval, output);
     }
     template<typename T>
     void compareExchange8ZeroExtend(const T& mem, Register oldval, Register newval, Register output)
     {
-        MOZ_CRASH("NYI");
+        compareExchange(1, false, mem, oldval, newval, output);
     }
     template<typename T>
     void compareExchange16SignExtend(const T& mem, Register oldval, Register newval, Register output)
     {
-        MOZ_CRASH("NYI");
+        compareExchange(2, true, mem, oldval, newval, output);
     }
     template<typename T>
     void compareExchange16ZeroExtend(const T& mem, Register oldval, Register newval, Register output)
     {
-        MOZ_CRASH("NYI");
+        compareExchange(2, false, mem, oldval, newval, output);
     }
     template<typename T>
     void compareExchange32(const T& mem, Register oldval, Register newval, Register output)
     {
-        MOZ_CRASH("NYI");
+        compareExchange(4, false, mem, oldval, newval, output);
     }
 
     template<typename T, typename S>

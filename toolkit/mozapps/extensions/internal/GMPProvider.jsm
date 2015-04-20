@@ -60,7 +60,7 @@ const GMP_PLUGINS = [
       return Services.urlFormatter.formatURLPref("app.support.baseURL") + "drm-content";
     },
     licenseURL:      "http://help.adobe.com/en_US/primetime/drm/HTML5_CDM_EULA/index.html",
-    homepageURL:     "http://help.adobe.com/en_US/primetime/drm/index.html",
+    homepageURL:     "https://www.adobe.com/marketing-cloud/primetime-tv-platform.html",
     optionsURL:      "chrome://mozapps/content/extensions/gmpPrefs.xul",
     isEME:           true
   }];
@@ -68,7 +68,7 @@ const GMP_PLUGINS = [
 XPCOMUtils.defineLazyGetter(this, "pluginsBundle",
   () => Services.strings.createBundle("chrome://global/locale/plugins.properties"));
 XPCOMUtils.defineLazyGetter(this, "gmpService",
-  () => Cc["@mozilla.org/gecko-media-plugin-service;1"].getService(Ci.mozIGeckoMediaPluginService));
+  () => Cc["@mozilla.org/gecko-media-plugin-service;1"].getService(Ci.mozIGeckoMediaPluginChromeService));
 
 let messageManager = Cc["@mozilla.org/globalmessagemanager;1"]
                        .getService(Ci.nsIMessageListenerManager);
@@ -400,7 +400,7 @@ GMPWrapper.prototype = {
     if (this._gmpPath) {
       this._log.info("onPrefVersionChanged() - unregistering gmp directory " +
                      this._gmpPath);
-      gmpService.removeAndDeletePluginDirectory(this._gmpPath);
+      gmpService.removeAndDeletePluginDirectory(this._gmpPath, true /* can defer */);
     }
     AddonManagerPrivate.callAddonListeners("onUninstalled", this);
 

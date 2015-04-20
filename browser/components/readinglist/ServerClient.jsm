@@ -68,11 +68,6 @@ ServerClient.prototype = {
   },
 
   _removeToken(token) {
-    // XXX - remove this check once tokencaching landsin FxA.
-    if (!this.fxa.removeCachedOAuthToken) {
-      dump("XXX - token caching support is yet to land - can't remove token!");
-      return;
-    }
     return this.fxa.removeCachedOAuthToken({token});
   },
 
@@ -133,11 +128,22 @@ ServerClient.prototype = {
       }
 
       request.onComplete = error => {
+        // Although the server API docs say the "Backoff" header is on
+        // successful responses while "Retry-After" is on error responses, we
+        // just look for them both in both cases (as the scheduler makes no
+        // distinction)
+        let response = request.response;
+        if (response && response.headers) {
+          let backoff = response.headers["backoff"] || response.headers["retry-after"];
+          if (backoff) {
+            log.info("Server requested backoff", backoff);
+            Services.obs.notifyObservers(null, "readinglist:backoff-requested", backoff);
+          }
+        }
         if (error) {
           return reject(this._convertRestError(error));
         }
 
-        let response = request.response;
         log.debug("received response status: ${status} ${statusText}", response);
         // Handle response status codes we know about
         let result = {
@@ -149,8 +155,8 @@ ServerClient.prototype = {
             result.body = JSON.parse(response.body);
           }
         } catch (e) {
-          log.info("Failed to parse JSON body |${body}|: ${e}",
-                    {body: response.body, e});
+          log.debug("Response is not JSON. First 1024 chars: |${body}|",
+                    { body: response.body.substr(0, 1024) });
           // We don't reject due to this (and don't even make a huge amount of
           // log noise - eg, a 50X error from a load balancer etc may not write
           // JSON.

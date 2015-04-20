@@ -94,6 +94,7 @@ public:
   nsresult PreHandleEvent(nsPresContext* aPresContext,
                           WidgetEvent* aEvent,
                           nsIFrame* aTargetFrame,
+                          nsIContent* aTargetContent,
                           nsEventStatus* aStatus);
 
   /* The PostHandleEvent method should contain all system processing which
@@ -755,6 +756,9 @@ protected:
   void BeginTrackingDragGesture(nsPresContext* aPresContext,
                                 WidgetMouseEvent* aDownEvent,
                                 nsIFrame* aDownFrame);
+
+  friend class mozilla::dom::TabParent;
+  void BeginTrackingRemoteDragGesture(nsIContent* aContent);
   void StopTrackingDragGesture();
   void GenerateDragGesture(nsPresContext* aPresContext,
                            WidgetMouseEvent* aEvent);
@@ -769,11 +773,11 @@ protected:
    * aSelection - [out] set to the selection to be dragged
    * aTargetNode - [out] the draggable node, or null if there isn't one
    */
-  void DetermineDragTarget(nsPIDOMWindow* aWindow,
-                           nsIContent* aSelectionTarget,
-                           dom::DataTransfer* aDataTransfer,
-                           nsISelection** aSelection,
-                           nsIContent** aTargetNode);
+  void DetermineDragTargetAndDefaultData(nsPIDOMWindow* aWindow,
+                                         nsIContent* aSelectionTarget,
+                                         dom::DataTransfer* aDataTransfer,
+                                         nsISelection** aSelection,
+                                         nsIContent** aTargetNode);
 
   /*
    * Perform the default handling for the dragstart/draggesture event and set up a

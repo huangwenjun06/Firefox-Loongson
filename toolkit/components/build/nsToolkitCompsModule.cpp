@@ -7,7 +7,7 @@
 #include "nsUserInfo.h"
 #include "nsToolkitCompsCID.h"
 #include "nsFindService.h"
-#if defined(USE_MOZ_UPDATER)
+#if defined(MOZ_UPDATER) && !defined(MOZ_WIDGET_ANDROID)
 #include "nsUpdateDriver.h"
 #endif
 
@@ -51,11 +51,15 @@
 #include "nsTerminator.h"
 #endif
 
+#include "nsPerformanceStats.h"
+
 using namespace mozilla;
 
 /////////////////////////////////////////////////////////////////////////////
 
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsAppStartup, Init)
+
+NS_GENERIC_FACTORY_CONSTRUCTOR(nsPerformanceStatsService)
 
 #if defined(MOZ_HAS_TERMINATOR)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsTerminator)
@@ -105,7 +109,7 @@ nsUrlClassifierDBServiceConstructor(nsISupports *aOuter, REFNSIID aIID,
 #endif
 
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsBrowserStatusFilter)
-#if defined(USE_MOZ_UPDATER)
+#if defined(MOZ_UPDATER) && !defined(MOZ_WIDGET_ANDROID)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsUpdateProcessor)
 #endif
 NS_GENERIC_FACTORY_CONSTRUCTOR(FinalizationWitnessService)
@@ -115,6 +119,7 @@ NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(NativeFileWatcherService, Init)
 NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(AddonPathService, AddonPathService::GetInstance)
 
 NS_DEFINE_NAMED_CID(NS_TOOLKIT_APPSTARTUP_CID);
+NS_DEFINE_NAMED_CID(NS_TOOLKIT_PERFORMANCESTATSSERVICE_CID);
 #if defined(MOZ_HAS_TERMINATOR)
 NS_DEFINE_NAMED_CID(NS_TOOLKIT_TERMINATOR_CID);
 #endif
@@ -136,7 +141,7 @@ NS_DEFINE_NAMED_CID(NS_URLCLASSIFIERSTREAMUPDATER_CID);
 NS_DEFINE_NAMED_CID(NS_URLCLASSIFIERUTILS_CID);
 #endif
 NS_DEFINE_NAMED_CID(NS_BROWSERSTATUSFILTER_CID);
-#if defined(USE_MOZ_UPDATER)
+#if defined(MOZ_UPDATER) && !defined(MOZ_WIDGET_ANDROID)
 NS_DEFINE_NAMED_CID(NS_UPDATEPROCESSOR_CID);
 #endif
 NS_DEFINE_NAMED_CID(FINALIZATIONWITNESSSERVICE_CID);
@@ -149,6 +154,7 @@ static const Module::CIDEntry kToolkitCIDs[] = {
 #if defined(MOZ_HAS_TERMINATOR)
   { &kNS_TOOLKIT_TERMINATOR_CID, false, nullptr, nsTerminatorConstructor },
 #endif
+  { &kNS_TOOLKIT_PERFORMANCESTATSSERVICE_CID, false, nullptr, nsPerformanceStatsServiceConstructor },
   { &kNS_USERINFO_CID, false, nullptr, nsUserInfoConstructor },
   { &kNS_ALERTSSERVICE_CID, false, nullptr, nsAlertsServiceConstructor },
 #if !defined(MOZ_DISABLE_PARENTAL_CONTROLS)
@@ -167,7 +173,7 @@ static const Module::CIDEntry kToolkitCIDs[] = {
   { &kNS_URLCLASSIFIERUTILS_CID, false, nullptr, nsUrlClassifierUtilsConstructor },
 #endif
   { &kNS_BROWSERSTATUSFILTER_CID, false, nullptr, nsBrowserStatusFilterConstructor },
-#if defined(USE_MOZ_UPDATER)
+#if defined(MOZ_UPDATER) && !defined(MOZ_WIDGET_ANDROID)
   { &kNS_UPDATEPROCESSOR_CID, false, nullptr, nsUpdateProcessorConstructor },
 #endif
   { &kFINALIZATIONWITNESSSERVICE_CID, false, nullptr, FinalizationWitnessServiceConstructor },
@@ -182,6 +188,7 @@ static const Module::ContractIDEntry kToolkitContracts[] = {
 #if defined(MOZ_HAS_TERMINATOR)
   { NS_TOOLKIT_TERMINATOR_CONTRACTID, &kNS_TOOLKIT_TERMINATOR_CID },
 #endif
+  { NS_TOOLKIT_PERFORMANCESTATSSERVICE_CONTRACTID, &kNS_TOOLKIT_PERFORMANCESTATSSERVICE_CID },
   { NS_USERINFO_CONTRACTID, &kNS_USERINFO_CID },
   { NS_ALERTSERVICE_CONTRACTID, &kNS_ALERTSSERVICE_CID },
 #if !defined(MOZ_DISABLE_PARENTAL_CONTROLS)
@@ -200,7 +207,7 @@ static const Module::ContractIDEntry kToolkitContracts[] = {
   { NS_URLCLASSIFIERUTILS_CONTRACTID, &kNS_URLCLASSIFIERUTILS_CID },
 #endif
   { NS_BROWSERSTATUSFILTER_CONTRACTID, &kNS_BROWSERSTATUSFILTER_CID },
-#if defined(USE_MOZ_UPDATER)
+#if defined(MOZ_UPDATER) && !defined(MOZ_WIDGET_ANDROID)
   { NS_UPDATEPROCESSOR_CONTRACTID, &kNS_UPDATEPROCESSOR_CID },
 #endif
   { FINALIZATIONWITNESSSERVICE_CONTRACTID, &kFINALIZATIONWITNESSSERVICE_CID },

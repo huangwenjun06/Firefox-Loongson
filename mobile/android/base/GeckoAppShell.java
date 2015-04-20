@@ -43,6 +43,7 @@ import org.mozilla.gecko.mozglue.JNITarget;
 import org.mozilla.gecko.mozglue.RobocopTarget;
 import org.mozilla.gecko.mozglue.generatorannotations.OptionalGeneratedParameter;
 import org.mozilla.gecko.mozglue.generatorannotations.WrapElementForJNI;
+import org.mozilla.gecko.overlays.ui.ShareDialog;
 import org.mozilla.gecko.prompts.PromptService;
 import org.mozilla.gecko.util.EventCallback;
 import org.mozilla.gecko.util.GeckoRequest;
@@ -226,6 +227,8 @@ public class GeckoAppShell
     private static Sensor gOrientationSensor;
     private static Sensor gProximitySensor;
     private static Sensor gLightSensor;
+    private static Sensor gRotationVectorSensor;
+    private static Sensor gGameRotationVectorSensor;
 
     private static final String GECKOREQUEST_RESPONSE_KEY = "response";
     private static final String GECKOREQUEST_ERROR_KEY = "error";
@@ -291,6 +294,9 @@ public class GeckoAppShell
 
     public static native SurfaceBits getSurfaceBits(Surface surface);
 
+    public static native void addPresentationSurface(Surface surface);
+    public static native void removePresentationSurface(Surface surface);
+
     public static native void onFullScreenPluginHidden(View view);
 
     public static class CreateShortcutFaviconLoadedListener implements OnFaviconLoadedListener {
@@ -315,8 +321,17 @@ public class GeckoAppShell
             return;
         }
         sLayerView = lv;
-        // Install new Gecko-to-Java editable listener.
-        editableListener = new GeckoEditable();
+
+        // We should have a unique GeckoEditable instance per nsWindow instance,
+        // so even though we have a new view here, the underlying nsWindow is the same,
+        // and we don't create a new GeckoEditable.
+        if (editableListener == null) {
+            // Starting up; istall new Gecko-to-Java editable listener.
+            editableListener = new GeckoEditable();
+        } else {
+            // Bind the existing GeckoEditable instance to the new LayerView
+            GeckoAppShell.notifyIMEContext(GeckoEditableListener.IME_STATE_DISABLED, "", "", "");
+        }
     }
 
     @RobocopTarget
@@ -648,46 +663,61 @@ public class GeckoAppShell
 
         switch(aSensortype) {
         case GeckoHalDefines.SENSOR_ORIENTATION:
-            if(gOrientationSensor == null)
+            if (gOrientationSensor == null)
                 gOrientationSensor = sm.getDefaultSensor(Sensor.TYPE_ORIENTATION);
-            if (gOrientationSensor != null) 
+            if (gOrientationSensor != null)
                 sm.registerListener(gi.getSensorEventListener(), gOrientationSensor, SensorManager.SENSOR_DELAY_GAME);
             break;
 
         case GeckoHalDefines.SENSOR_ACCELERATION:
-            if(gAccelerometerSensor == null)
+            if (gAccelerometerSensor == null)
                 gAccelerometerSensor = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
             if (gAccelerometerSensor != null)
                 sm.registerListener(gi.getSensorEventListener(), gAccelerometerSensor, SensorManager.SENSOR_DELAY_GAME);
             break;
 
         case GeckoHalDefines.SENSOR_PROXIMITY:
-            if(gProximitySensor == null  )
+            if (gProximitySensor == null)
                 gProximitySensor = sm.getDefaultSensor(Sensor.TYPE_PROXIMITY);
             if (gProximitySensor != null)
                 sm.registerListener(gi.getSensorEventListener(), gProximitySensor, SensorManager.SENSOR_DELAY_NORMAL);
             break;
 
         case GeckoHalDefines.SENSOR_LIGHT:
-            if(gLightSensor == null)
+            if (gLightSensor == null)
                 gLightSensor = sm.getDefaultSensor(Sensor.TYPE_LIGHT);
             if (gLightSensor != null)
                 sm.registerListener(gi.getSensorEventListener(), gLightSensor, SensorManager.SENSOR_DELAY_NORMAL);
             break;
 
         case GeckoHalDefines.SENSOR_LINEAR_ACCELERATION:
-            if(gLinearAccelerometerSensor == null)
-                gLinearAccelerometerSensor = sm.getDefaultSensor(10 /* API Level 9 - TYPE_LINEAR_ACCELERATION */);
+            if (gLinearAccelerometerSensor == null)
+                gLinearAccelerometerSensor = sm.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION);
             if (gLinearAccelerometerSensor != null)
                 sm.registerListener(gi.getSensorEventListener(), gLinearAccelerometerSensor, SensorManager.SENSOR_DELAY_GAME);
             break;
 
         case GeckoHalDefines.SENSOR_GYROSCOPE:
-            if(gGyroscopeSensor == null)
+            if (gGyroscopeSensor == null)
                 gGyroscopeSensor = sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
             if (gGyroscopeSensor != null)
                 sm.registerListener(gi.getSensorEventListener(), gGyroscopeSensor, SensorManager.SENSOR_DELAY_GAME);
             break;
+
+        case GeckoHalDefines.SENSOR_ROTATION_VECTOR:
+            if (gRotationVectorSensor == null)
+                gRotationVectorSensor = sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
+            if (gRotationVectorSensor != null)
+                sm.registerListener(gi.getSensorEventListener(), gRotationVectorSensor, SensorManager.SENSOR_DELAY_GAME);
+            break;
+
+        case GeckoHalDefines.SENSOR_GAME_ROTATION_VECTOR:
+            if (gGameRotationVectorSensor == null)
+                gGameRotationVectorSensor = sm.getDefaultSensor(15 /* Sensor.TYPE_GAME_ROTATION_VECTOR */); // API >= 18
+            if (gGameRotationVectorSensor != null)
+                sm.registerListener(gi.getSensorEventListener(), gGameRotationVectorSensor, SensorManager.SENSOR_DELAY_GAME);
+            break;
+
         default:
             Log.w(LOGTAG, "Error! Can't enable unknown SENSOR type " + aSensortype);
         }
@@ -726,6 +756,16 @@ public class GeckoAppShell
         case GeckoHalDefines.SENSOR_LINEAR_ACCELERATION:
             if (gLinearAccelerometerSensor != null)
                 sm.unregisterListener(gi.getSensorEventListener(), gLinearAccelerometerSensor);
+            break;
+
+        case GeckoHalDefines.SENSOR_ROTATION_VECTOR:
+            if (gRotationVectorSensor != null)
+                sm.unregisterListener(gi.getSensorEventListener(), gRotationVectorSensor);
+            break;
+
+        case GeckoHalDefines.SENSOR_GAME_ROTATION_VECTOR:
+            if (gGameRotationVectorSensor != null)
+                sm.unregisterListener(gi.getSensorEventListener(), gGameRotationVectorSensor);
             break;
 
         case GeckoHalDefines.SENSOR_GYROSCOPE:
@@ -1135,6 +1175,7 @@ public class GeckoAppShell
         Intent shareIntent = getIntentForActionString(Intent.ACTION_SEND);
         shareIntent.putExtra(Intent.EXTRA_TEXT, targetURI);
         shareIntent.putExtra(Intent.EXTRA_SUBJECT, title);
+        shareIntent.putExtra(ShareDialog.INTENT_EXTRA_DEVICES_ONLY, true);
 
         // Note that EXTRA_TITLE is intended to be used for share dialog
         // titles. Common usage (e.g., Pocket) suggests that it's sometimes
@@ -2129,7 +2170,6 @@ public class GeckoAppShell
         public boolean areTabsShown();
         public AbsoluteLayout getPluginContainer();
         public void notifyCheckUpdateResult(String result);
-        public boolean hasTabsSideBar();
         public void invalidateOptionsMenu();
     };
 

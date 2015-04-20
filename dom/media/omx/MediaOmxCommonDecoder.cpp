@@ -207,7 +207,7 @@ MediaOmxCommonDecoder::ChangeState(PlayState aState)
   switch (mPlayState) {
     case PLAY_STATE_SEEKING:
       mSeekRequest.Begin(mAudioOffloadPlayer->Seek(mRequestedSeekTarget)
-        ->RefableThen(NS_GetCurrentThread(), __func__, static_cast<MediaDecoder*>(this),
+        ->RefableThen(AbstractThread::MainThread(), __func__, static_cast<MediaDecoder*>(this),
                       &MediaDecoder::OnSeekResolved, &MediaDecoder::OnSeekRejected));
       mRequestedSeekTarget.Reset();
       break;

@@ -39,24 +39,32 @@ using namespace mozilla::dom;
 using namespace mozilla::ipc;
 
 namespace {
-// Sending system message "bluetooth-opp-update-progress" every 50kb
-static const uint32_t kUpdateProgressBase = 50 * 1024;
+  // Sending system message "bluetooth-opp-update-progress" every 50kb
+  static const uint32_t kUpdateProgressBase = 50 * 1024;
 
-/*
- * The format of the header of an PUT request is
- * [opcode:1][packet length:2][headerId:1][header length:2]
- */
-static const uint32_t kPutRequestHeaderSize = 6;
+  /*
+   * The format of the header of an PUT request is
+   * [opcode:1][packet length:2][headerId:1][header length:2]
+   */
+  static const uint32_t kPutRequestHeaderSize = 6;
 
-/*
- * The format of the appended header of an PUT request is
- * [headerId:1][header length:4]
- * P.S. Length of name header is 4 since unicode is 2 bytes per char.
- */
-static const uint32_t kPutRequestAppendHeaderSize = 5;
+  /*
+   * The format of the appended header of an PUT request is
+   * [headerId:1][header length:4]
+   * P.S. Length of name header is 4 since unicode is 2 bytes per char.
+   */
+  static const uint32_t kPutRequestAppendHeaderSize = 5;
 
-StaticRefPtr<BluetoothOppManager> sBluetoothOppManager;
-static bool sInShutdown = false;
+  // UUID of OBEX Object Push
+  static const BluetoothUuid kObexObjectPush = {
+    {
+      0x00, 0x00, 0x11, 0x05, 0x00, 0x00, 0x10, 0x00,
+      0x80, 0x00, 0x00, 0x80, 0x5F, 0x9B, 0x34, 0xFB
+    }
+  };
+
+  StaticRefPtr<BluetoothOppManager> sBluetoothOppManager;
+  static bool sInShutdown = false;
 }
 
 BEGIN_BLUETOOTH_NAMESPACE
@@ -80,11 +88,16 @@ BluetoothOppManager::Observe(nsISupports* aSubject,
                              const char16_t* aData)
 {
   MOZ_ASSERT(sBluetoothOppManager);
+
+#ifdef MOZ_B2G_BT_API_V2
+  // Removed in bluetooth2
+#else
   // if state of any volume was changed
   if (!strcmp(aTopic, NS_VOLUME_STATE_CHANGED)) {
     HandleVolumeStateChanged(aSubject);
     return NS_OK;
   }
+#endif
 
   if (!strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID)) {
     HandleShutdown();
@@ -213,9 +226,13 @@ BluetoothOppManager::~BluetoothOppManager()
     BT_WARNING("Failed to remove shutdown observer!");
   }
 
+#ifdef MOZ_B2G_BT_API_V2
+  // Removed in bluetooth2
+#else
   if (NS_FAILED(obs->RemoveObserver(this, NS_VOLUME_STATE_CHANGED))) {
     BT_WARNING("Failed to remove volume observer!");
   }
+#endif
 }
 
 bool
@@ -228,10 +245,14 @@ BluetoothOppManager::Init()
     return false;
   }
 
+#ifdef MOZ_B2G_BT_API_V2
+  // Removed in bluetooth2
+#else
   if (NS_FAILED(obs->AddObserver(this, NS_VOLUME_STATE_CHANGED, false))) {
     BT_WARNING("Failed to add ns volume observer!");
     return false;
   }
+#endif
 
   /**
    * We don't start listening here as BluetoothServiceBluedroid calls Listen()
@@ -288,7 +309,7 @@ BluetoothOppManager::ConnectInternal(const nsAString& aDeviceAddress)
 
   mSocket =
     new BluetoothSocket(this, BluetoothSocketType::RFCOMM, false, true);
-  mSocket->ConnectSocket(aDeviceAddress, -1);
+  mSocket->ConnectSocket(aDeviceAddress, kObexObjectPush, -1);
 }
 
 void
@@ -300,6 +321,9 @@ BluetoothOppManager::HandleShutdown()
   sBluetoothOppManager = nullptr;
 }
 
+#ifdef MOZ_B2G_BT_API_V2
+  // Removed in bluetooth2
+#else
 void
 BluetoothOppManager::HandleVolumeStateChanged(nsISupports* aSubject)
 {
@@ -333,6 +357,7 @@ BluetoothOppManager::HandleVolumeStateChanged(nsISupports* aSubject)
     Disconnect(nullptr);
   }
 }
+#endif
 
 bool
 BluetoothOppManager::Listen()
@@ -357,7 +382,9 @@ BluetoothOppManager::Listen()
   mServerSocket =
     new BluetoothSocket(this, BluetoothSocketType::RFCOMM, false, true);
 
-  if (!mServerSocket->ListenSocket(BluetoothReservedChannels::CHANNEL_OPUSH)) {
+  if (!mServerSocket->ListenSocket(NS_LITERAL_STRING("OBEX Object Push"),
+                                   kObexObjectPush,
+                                   BluetoothReservedChannels::CHANNEL_OPUSH)) {
     BT_WARNING("[OPP] Can't listen on RFCOMM socket!");
     mServerSocket = nullptr;
     return false;

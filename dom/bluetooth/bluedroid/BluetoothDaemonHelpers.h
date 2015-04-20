@@ -262,9 +262,6 @@ nsresult
 Convert(const nsAString& aIn, BluetoothServiceName& aOut);
 
 nsresult
-Convert(const nsAString& aIn, BluetoothSspVariant& aOut);
-
-nsresult
 Convert(BluetoothAclState aIn, bool& aOut);
 
 nsresult
@@ -329,9 +326,6 @@ Convert(BluetoothSocketType aIn, uint8_t& aOut);
 
 nsresult
 Convert(BluetoothSspVariant aIn, uint8_t& aOut);
-
-nsresult
-Convert(BluetoothSspVariant aIn, nsAString& aOut);
 
 nsresult
 Convert(ControlPlayStatus aIn, uint8_t& aOut);

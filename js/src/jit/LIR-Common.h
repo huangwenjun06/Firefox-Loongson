@@ -31,26 +31,6 @@ class LBinaryMath : public LInstructionHelper<1, 2 + ExtraUses, Temps>
     }
 };
 
-// Simplifies register allocation since the first instruction of a block is
-// guaranteed to have no uses.
-class LLabel : public LInstructionHelper<0, 0, 0>
-{
-  public:
-    LIR_HEADER(Label)
-};
-
-class LNop : public LInstructionHelper<0, 0, 0>
-{
-  public:
-    LIR_HEADER(Nop)
-};
-
-class LMop : public LInstructionHelper<0, 0, 0>
-{
-  public:
-    LIR_HEADER(Mop)
-};
-
 // An LOsiPoint captures a snapshot after a call and ensures enough space to
 // patch in a call to the invalidation mechanism.
 //
@@ -6125,6 +6105,38 @@ class LGuardReceiverPolymorphic : public LInstructionHelper<0, 1, 1>
     }
     const MGuardReceiverPolymorphic* mir() const {
         return mir_->toGuardReceiverPolymorphic();
+    }
+};
+
+class LGuardUnboxedExpando : public LInstructionHelper<0, 1, 0>
+{
+  public:
+    LIR_HEADER(GuardUnboxedExpando)
+
+    explicit LGuardUnboxedExpando(const LAllocation& in) {
+        setOperand(0, in);
+    }
+    const LAllocation* object() {
+        return getOperand(0);
+    }
+    const MGuardUnboxedExpando* mir() const {
+        return mir_->toGuardUnboxedExpando();
+    }
+};
+
+class LLoadUnboxedExpando : public LInstructionHelper<1, 1, 0>
+{
+  public:
+    LIR_HEADER(LoadUnboxedExpando)
+
+    explicit LLoadUnboxedExpando(const LAllocation& in) {
+        setOperand(0, in);
+    }
+    const LAllocation* object() {
+        return getOperand(0);
+    }
+    const MLoadUnboxedExpando* mir() const {
+        return mir_->toLoadUnboxedExpando();
     }
 };
 

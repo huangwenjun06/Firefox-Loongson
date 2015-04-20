@@ -5,20 +5,22 @@
 
 const {Cc, Ci, Cu, Cr} = require("chrome");
 
-loader.lazyRequireGetter(this, "Services");
 loader.lazyRequireGetter(this, "L10N",
   "devtools/shared/profiler/global", true);
 loader.lazyRequireGetter(this, "CATEGORY_MAPPINGS",
   "devtools/shared/profiler/global", true);
+loader.lazyRequireGetter(this, "CATEGORIES",
+  "devtools/shared/profiler/global", true);
 loader.lazyRequireGetter(this, "CATEGORY_JIT",
   "devtools/shared/profiler/global", true);
-
-const CHROME_SCHEMES = ["chrome://", "resource://", "jar:file://"];
-const CONTENT_SCHEMES = ["http://", "https://", "file://", "app://"];
+loader.lazyRequireGetter(this, "JITOptimizations",
+  "devtools/shared/profiler/jit", true);
+loader.lazyRequireGetter(this, "FrameUtils",
+  "devtools/shared/profiler/frame-utils");
 
 exports.ThreadNode = ThreadNode;
 exports.FrameNode = FrameNode;
-exports.FrameNode.isContent = isContent;
+exports.FrameNode.isContent = FrameUtils.isContent;
 
 /**
  * A call tree for a thread. This is essentially a linkage between all frames
@@ -50,6 +52,8 @@ exports.FrameNode.isContent = isContent;
  *          - number endTime [optional]
  *          - boolean contentOnly [optional]
  *          - boolean invertTree [optional]
+ *          - object optimizations [optional]
+ *            The raw tracked optimizations array received from the backend.
  */
 function ThreadNode(threadSamples, options = {}) {
   this.samples = 0;
@@ -76,10 +80,12 @@ ThreadNode.prototype = {
    *          - number endTime: the latest sample to end at (in milliseconds)
    *          - boolean contentOnly: if platform frames shouldn't be used
    *          - boolean invertTree: if the call tree should be inverted
+   *          - object optimizations: The array of all indexable optimizations from the backend.
    */
   insert: function(sample, options = {}) {
     let startTime = options.startTime || 0;
     let endTime = options.endTime || Infinity;
+    let optimizations = options.optimizations;
     let sampleTime = sample.time;
     if (!sampleTime || sampleTime < startTime || sampleTime > endTime) {
       return;
@@ -91,7 +97,7 @@ ThreadNode.prototype = {
     // should be taken into consideration.
     if (options.contentOnly) {
       // The (root) node is not considered a content function, it'll be removed.
-      sampleFrames = sampleFrames.filter(isContent);
+      sampleFrames = FrameUtils.filterPlatformData(sampleFrames);
     } else {
       // Remove the (root) node manually.
       sampleFrames = sampleFrames.slice(1);
@@ -112,7 +118,7 @@ ThreadNode.prototype = {
     this.duration += sampleDuration;
 
     FrameNode.prototype.insert(
-      sampleFrames, 0, sampleTime, sampleDuration, this.calls);
+      sampleFrames, optimizations, 0, sampleTime, sampleDuration, this.calls);
   },
 
   /**
@@ -125,6 +131,19 @@ ThreadNode.prototype = {
       functionName: L10N.getStr("table.root"),
       categoryData: {}
     };
+  },
+
+  /**
+   * Mimicks the interface of FrameNode, and a ThreadNode can never have
+   * optimization data (at the moment, anyway), so provide a function
+   * to return null so we don't need to check if a frame node is a thread
+   * or not everytime we fetch optimization data.
+   *
+   * @return {null}
+   */
+
+  hasOptimizations: function () {
+    return null;
   }
 };
 
@@ -142,8 +161,11 @@ ThreadNode.prototype = {
  *        The category type of this function call ("js", "graphics" etc.).
  * @param number allocations
  *        The number of memory allocations performed in this frame.
+ * @param boolean isMetaCategory
+ *        Whether or not this is a platform node that should appear as a
+ *        generalized meta category or not.
  */
-function FrameNode({ location, line, column, category, allocations }) {
+function FrameNode({ location, line, column, category, allocations, isMetaCategory }) {
   this.location = location;
   this.line = line;
   this.column = column;
@@ -153,6 +175,8 @@ function FrameNode({ location, line, column, category, allocations }) {
   this.samples = 0;
   this.duration = 0;
   this.calls = {};
+  this._optimizations = null;
+  this.isMetaCategory = isMetaCategory;
 }
 
 FrameNode.prototype = {
@@ -168,6 +192,8 @@ FrameNode.prototype = {
    *                      C   D   F
    * @param frames
    *        The sample call stack.
+   * @param optimizations
+   *        The array of indexable optimizations.
    * @param index
    *        The index of the call in the stack representing this node.
    * @param number time
@@ -175,28 +201,44 @@ FrameNode.prototype = {
    * @param number duration
    *        The amount of time spent executing all functions on the stack.
    */
-  insert: function(frames, index, time, duration, _store = this.calls) {
+  insert: function(frames, optimizations, index, time, duration, _store = this.calls) {
     let frame = frames[index];
     if (!frame) {
       return;
     }
-    let location = frame.location;
-    let child = _store[location] || (_store[location] = new FrameNode(frame));
+    // If we are only displaying content, then platform data will have
+    // a `isMetaCategory` property. Group by category (GC, Graphics, etc.)
+    // to group together frames so they're displayed only once, since we don't
+    // need the location anyway.
+    let key = frame.isMetaCategory ? frame.category : frame.location;
+    let child = _store[key] || (_store[key] = new FrameNode(frame));
     child.sampleTimes.push({ start: time, end: time + duration });
     child.samples++;
     child.duration += duration;
-    child.insert(frames, ++index, time, duration);
+    if (optimizations && frame.optsIndex != null) {
+      let opts = child._optimizations || (child._optimizations = new JITOptimizations(optimizations));
+      opts.addOptimizationSite(frame.optsIndex);
+    }
+    child.insert(frames, optimizations, index + 1, time, duration);
   },
 
   /**
-   * Parses the raw location of this function call to retrieve the actual
-   * function name and source url.
+   * Returns the parsed location and additional data describing
+   * this frame. Uses cached data if possible.
    *
    * @return object
    *         The computed { name, file, url, line } properties for this
    *         function call.
    */
   getInfo: function() {
+    return this._data || this._computeInfo();
+  },
+
+  /**
+   * Parses the raw location of this function call to retrieve the actual
+   * function name and source url.
+   */
+  _computeInfo: function() {
     // "EnterJIT" pseudoframes are special, not actually on the stack.
     if (this.location == "EnterJIT") {
       this.category = CATEGORY_JIT;
@@ -206,76 +248,31 @@ FrameNode.prototype = {
     // default to an "unknown" category otherwise.
     let categoryData = CATEGORY_MAPPINGS[this.category] || {};
 
-    // Parse the `location` for the function name, source url, line, column etc.
-    let lineAndColumn = this.location.match(/((:\d+)*)\)?$/)[1];
-    let [, line, column] = lineAndColumn.split(":");
-    line = line || this.line;
-    column = column || this.column;
+    let parsedData = FrameUtils.parseLocation(this);
+    parsedData.nodeType = "Frame";
+    parsedData.categoryData = categoryData;
+    parsedData.isContent = FrameUtils.isContent(this);
+    parsedData.isMetaCategory = this.isMetaCategory;
 
-    let firstParenIndex = this.location.indexOf("(");
-    let lineAndColumnIndex = this.location.indexOf(lineAndColumn);
-    let resource = this.location.substring(firstParenIndex + 1, lineAndColumnIndex);
+    return this._data = parsedData;
+  },
 
-    let url = resource.split(" -> ").pop();
-    let uri = nsIURL(url);
-    let functionName, fileName, hostName;
+  /**
+   * Returns whether or not the frame node has an JITOptimizations model.
+   *
+   * @return {Boolean}
+   */
+  hasOptimizations: function () {
+    return !!this._optimizations;
+  },
 
-    // If the URI digged out from the `location` is valid, this is a JS frame.
-    if (uri) {
-      functionName = this.location.substring(0, firstParenIndex - 1);
-      fileName = (uri.fileName + (uri.ref ? "#" + uri.ref : "")) || "/";
-      hostName = url.indexOf("jar:") == 0 ? "" : uri.host;
-    } else {
-      functionName = this.location;
-      url = null;
-    }
-
-    return {
-      nodeType: "Frame",
-      functionName: functionName,
-      fileName: fileName,
-      hostName: hostName,
-      url: url,
-      line: line,
-      column: column,
-      categoryData: categoryData,
-      isContent: !!isContent(this)
-    };
+  /**
+   * Returns the underlying JITOptimizations model representing
+   * the optimization attempts occuring in this frame.
+   *
+   * @return {JITOptimizations|null}
+   */
+  getOptimizations: function () {
+    return this._optimizations;
   }
 };
-
-/**
- * Checks if the specified function represents a chrome or content frame.
- *
- * @param object frame
- *        The { category, location } properties of the frame.
- * @return boolean
- *         True if a content frame, false if a chrome frame.
- */
-function isContent({ category, location }) {
-  // Only C++ stack frames have associated category information.
-  return !category &&
-    !CHROME_SCHEMES.find(e => location.contains(e)) &&
-    CONTENT_SCHEMES.find(e => location.contains(e));
-}
-
-/**
- * Helper for getting an nsIURL instance out of a string.
- */
-function nsIURL(url) {
-  let cached = gNSURLStore.get(url);
-  if (cached) {
-    return cached;
-  }
-  let uri = null;
-  try {
-    uri = Services.io.newURI(url, null, null).QueryInterface(Ci.nsIURL);
-  } catch(e) {
-    // The passed url string is invalid.
-  }
-  gNSURLStore.set(url, uri);
-  return uri;
-}
-
-// The cache used in the `nsIURL` function.
-let gNSURLStore = new Map();

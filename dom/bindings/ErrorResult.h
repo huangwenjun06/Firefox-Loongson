@@ -17,6 +17,12 @@
 #include "nscore.h"
 #include "nsStringGlue.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/Move.h"
+
+namespace IPC {
+class Message;
+template <typename> struct ParamTraits;
+}
 
 namespace mozilla {
 
@@ -41,11 +47,8 @@ public:
     mResult = NS_OK;
 
 #ifdef DEBUG
-    // ErrorResult is extremely performance-sensitive code, where literally
-    // every machine instruction matters. Initialize mMessage only to suppress
-    // a debug-only warning from gcc 4.6.
-    mMessage = nullptr;
     mMightHaveUnreportedJSException = false;
+    mHasMessage = false;
 #endif
   }
 
@@ -53,8 +56,15 @@ public:
   ~ErrorResult() {
     MOZ_ASSERT_IF(IsErrorWithMessage(), !mMessage);
     MOZ_ASSERT(!mMightHaveUnreportedJSException);
+    MOZ_ASSERT(!mHasMessage);
   }
 #endif
+
+  ErrorResult(ErrorResult&& aRHS)
+  {
+    *this = Move(aRHS);
+  }
+  ErrorResult& operator=(ErrorResult&& aRHS);
 
   void Throw(nsresult rv) {
     MOZ_ASSERT(NS_FAILED(rv), "Please don't try throwing success");
@@ -161,15 +171,24 @@ private:
     JS::Value mJSException; // valid when IsJSException()
   };
 
+  friend struct IPC::ParamTraits<ErrorResult>;
+  void SerializeMessage(IPC::Message* aMsg) const;
+  bool DeserializeMessage(const IPC::Message* aMsg, void** aIter);
+
 #ifdef DEBUG
   // Used to keep track of codepaths that might throw JS exceptions,
   // for assertion purposes.
   bool mMightHaveUnreportedJSException;
+  // Used to keep track of whether mMessage has ever been assigned to.
+  // We need to check this in order to ensure that not attempting to
+  // delete mMessage in DeserializeMessage doesn't leak memory.
+  bool mHasMessage;
 #endif
 
   // Not to be implemented, to make sure people always pass this by
   // reference, not by value.
   ErrorResult(const ErrorResult&) = delete;
+  void operator=(const ErrorResult&) = delete;
   void ThrowErrorWithMessage(va_list ap, const dom::ErrNum errorNumber,
                              nsresult errorType);
 };

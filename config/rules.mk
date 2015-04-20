@@ -16,10 +16,6 @@ $(error Do not include rules.mk twice!)
 endif
 INCLUDED_RULES_MK = 1
 
-# Make sure that anything that needs to be defined in moz.build wasn't
-# overwritten after including config.mk.
-_eval_for_side_effects := $(CHECK_MOZBUILD_VARIABLES)
-
 ifndef INCLUDED_CONFIG_MK
 include $(topsrcdir)/config/config.mk
 endif
@@ -715,6 +711,9 @@ else
 	$(EXPAND_LIBS_EXEC) -- $(HOST_CC) -o $@ $(HOST_CFLAGS) $(HOST_LDFLAGS) $(HOST_PROGOBJS) $(HOST_LIBS) $(HOST_EXTRA_LIBS)
 endif # HOST_CPP_PROG_LINK
 endif
+ifndef CROSS_COMPILE
+	$(call CHECK_STDCXX,$@)
+endif
 
 #
 # This is an attempt to support generation of multiple binaries
@@ -756,6 +755,9 @@ ifneq (,$(HOST_CPPSRCS)$(USE_HOST_CXX))
 else
 	$(EXPAND_LIBS_EXEC) -- $(HOST_CC) $(HOST_OUTOPTION)$@ $(HOST_CFLAGS) $(INCLUDES) $< $(HOST_LIBS) $(HOST_EXTRA_LIBS)
 endif
+endif
+ifndef CROSS_COMPILE
+	$(call CHECK_STDCXX,$@)
 endif
 
 ifdef DTRACE_PROBE_OBJ
@@ -1635,10 +1637,3 @@ endif
 export:: $(GENERATED_FILES)
 
 GARBAGE += $(GENERATED_FILES)
-
-# We may have modified "frozen" variables in rules.mk (we do that), but we don't
-# want Makefile.in doing that, so collect the possibly modified variables here,
-# and check them again in recurse.mk, which is always included after Makefile.in
-# contents.
-$(foreach var,$(_MOZBUILD_EXTERNAL_VARIABLES),$(eval $(var)_FROZEN := '$($(var))'))
-$(foreach var,$(_DEPRECATED_VARIABLES),$(eval $(var)_FROZEN := '$($(var))'))

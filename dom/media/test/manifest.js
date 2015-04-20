@@ -112,6 +112,10 @@ var gMediaRecorderTests = [
 // something crashes we have some idea of which backend is responsible.
 // Used by test_playback, which expects no error event and one ended event.
 var gPlayTests = [
+  // Test playback of a WebM file with vp9 video
+  //{ name:"vp9.webm", type:"video/webm", duration:4 },
+  { name:"vp9cake.webm", type:"video/webm", duration:7.966 },
+
   // 8-bit samples
   { name:"r11025_u8_c1.wav", type:"audio/x-wav", duration:1.0 },
   // 8-bit samples, file is truncated
@@ -226,10 +230,6 @@ var gPlayTests = [
 
   // Invalid file
   { name:"bogus.duh", type:"bogus/duh", duration:Number.NaN },
-
-  // Test playback of a WebM file with vp9 video
-  //{ name:"vp9.webm", type:"video/webm", duration:4 },
-  { name:"vp9cake.webm", type:"video/webm", duration:7.966 }
 ];
 
 // A file for each type we can support.
@@ -647,7 +647,7 @@ var gMetadataTests = [
 // Test files for Encrypted Media Extensions
 var gEMETests = [
   {
-    name:"bipbop-cenc-videoinit.mp4",
+    name:"video-only with 2 keys",
     tracks: [
       {
         name:"video",
@@ -664,10 +664,11 @@ var gEMETests = [
       "7e571d047e571d047e571d047e571d04" : "7e5744447e5744447e5744447e574444",
     },
     sessionType:"temporary",
+    sessionCount:1,
     duration:1.60,
   },
   {
-    name:"bipbop-cenc-videoinit.mp4",
+    name:"video-only with 2 keys, CORS",
     tracks: [
       {
         name:"video",
@@ -684,11 +685,12 @@ var gEMETests = [
       "7e571d047e571d047e571d047e571d04" : "7e5744447e5744447e5744447e574444",
     },
     sessionType:"temporary",
+    sessionCount:1,
     crossOrigin:true,
     duration:1.60,
   },
   {
-    name:"bipbop-cenc-videoinit.mp4",
+    name:"audio&video tracks, both with all keys",
     tracks: [
       {
         name:"audio",
@@ -714,10 +716,11 @@ var gEMETests = [
       "7e571d047e571d047e571d047e571d04" : "7e5744447e5744447e5744447e574444",
     },
     sessionType:"temporary",
+    sessionCount:2,
     duration:1.60,
   },
   {
-    name:"bipbop-cenc-videoinit.mp4",
+    name:"audio&video tracks, both with all keys, CORS",
     tracks: [
       {
         name:"audio",
@@ -743,7 +746,39 @@ var gEMETests = [
       "7e571d047e571d047e571d047e571d04" : "7e5744447e5744447e5744447e574444",
     },
     sessionType:"temporary",
+    sessionCount:2,
     crossOrigin:true,
+    duration:1.60,
+  },
+  {
+    name:"audio&video tracks, each with its key",
+    type:"video/mp4; codecs=\"avc1.64000d,mp4a.40.2\"",
+    tracks: [
+      {
+        name:"audio",
+        type:"audio/mp4; codecs=\"mp4a.40.2\"",
+        fragments:[ "bipbop-cenc1-audioinit.mp4",
+                    "bipbop-cenc1-audio1.m4s",
+                    "bipbop-cenc1-audio2.m4s",
+                    "bipbop-cenc1-audio3.m4s",
+                  ],
+      },
+      {
+        name:"video",
+        type:"video/mp4; codecs=\"avc1.64000d\"",
+        fragments:[ "bipbop-cenc1-videoinit.mp4",
+                    "bipbop-cenc1-video1.m4s",
+                    "bipbop-cenc1-video2.m4s",
+                  ],
+      },
+    ],
+    keys: {
+      // "keyid" : "key"
+      "7e571d037e571d037e571d037e571d03" : "7e5733337e5733337e5733337e573333",
+      "7e571d047e571d047e571d047e571d04" : "7e5744447e5744447e5744447e574444",
+    },
+    sessionType:"temporary",
+    sessionCount:2,
     duration:1.60,
   },
 ];
@@ -830,6 +865,26 @@ function once(target, name, cb) {
   return p;
 }
 
+function TimeStamp(token) {
+  function pad(x) {
+    return (x < 10) ? "0" + x : x;
+  }
+  var now = new Date();
+  var ms = now.getMilliseconds();
+  var time = "[" +
+             pad(now.getHours()) + ":" +
+             pad(now.getMinutes()) + ":" +
+             pad(now.getSeconds()) + "." +
+             ms +
+             "]" +
+             (ms < 10 ? "  " : (ms < 100 ? " " : ""));
+  return token ? (time + " " + token) : time;
+}
+
+function Log(token, msg) {
+  info(TimeStamp(token) + " " + msg);
+}
+
 // Number of tests to run in parallel.
 var PARALLEL_TESTS = 2;
 
@@ -837,6 +892,8 @@ var PARALLEL_TESTS = 2;
 // conditions that might not otherwise be encountered on the test data.
 var gTestPrefs = [
   ['media.recorder.max_memory', 1024],
+  ["media.preload.default", 2], // default preload = metadata
+  ["media.preload.auto", 3] // auto preload = enough
 ];
 
 // When true, we'll loop forever on whatever test we run. Use this to debug
@@ -877,27 +934,34 @@ function MediaTestManager() {
     this.tokens = [];
     this.isShutdown = false;
     this.numTestsRunning = 0;
+    this.handlers = {};
+
     // Always wait for explicit finish.
     SimpleTest.waitForExplicitFinish();
     SpecialPowers.pushPrefEnv({'set': gTestPrefs}, (function() {
       this.nextTest();
     }).bind(this));
+
+    SimpleTest.registerCleanupFunction(function() {
+      if (this.tokens.length > 0) {
+        info("Test timed out. Remaining tests=" + this.tokens);
+      }
+      for (var token of this.tokens) {
+        var handler = this.handlers[token];
+        if (handler && handler.ontimeout) {
+          handler.ontimeout();
+        }
+      }
+    }.bind(this));
   }
 
   // Registers that the test corresponding to 'token' has been started.
   // Don't call more than once per token.
-  this.started = function(token) {
+  this.started = function(token, handler) {
     this.tokens.push(token);
     this.numTestsRunning++;
+    this.handlers[token] = handler;
     is(this.numTestsRunning, this.tokens.length, "[started " + token + "] Length of array should match number of running tests");
-  }
-
-  this.watchdog = null;
-
-  this.watchdogFn = function() {
-    if (this.tokens.length > 0) {
-      info("Watchdog remaining tests= " + this.tokens);
-    }
   }
 
   // Registers that the test corresponding to 'token' has finished. Call when
@@ -911,17 +975,11 @@ function MediaTestManager() {
       this.tokens.splice(i, 1);
     }
 
-    if (this.watchdog) {
-      clearTimeout(this.watchdog);
-      this.watchdog = null;
-    }
-
     info("[finished " + token + "] remaining= " + this.tokens);
     this.numTestsRunning--;
     is(this.numTestsRunning, this.tokens.length, "[finished " + token + "] Length of array should match number of running tests");
     if (this.tokens.length < PARALLEL_TESTS) {
       this.nextTest();
-      this.watchdog = setTimeout(this.watchdogFn.bind(this), 10000);
     }
   }
 
@@ -980,52 +1038,15 @@ function mediaTestCleanup(callback) {
       removeNodeAndSource(A[i]);
       A[i] = null;
     }
-    var cb = function() {
-      if (callback) {
-        callback();
-      }
-    }
-    SpecialPowers.exactGC(window, cb);
+    SpecialPowers.exactGC(window, callback);
 }
 
-(function() {
-  SimpleTest.requestFlakyTimeout("untriaged");
+function setMediaTestsPrefs(callback, extraPrefs) {
+  var prefs = gTestPrefs;
+  if (extraPrefs) {
+    prefs = prefs.concat(extraPrefs);
+  }
+  SpecialPowers.pushPrefEnv({"set": prefs}, callback);
+}
 
-  // Ensure that preload preferences are comsistent
-  var prefService = SpecialPowers.wrap(SpecialPowers.Components)
-                                 .classes["@mozilla.org/preferences-service;1"]
-                                 .getService(SpecialPowers.Ci.nsIPrefService);
-  var branch = prefService.getBranch("media.");
-  var oldDefault = 2;
-  var oldAuto = 3;
-  var oldAppleMedia = undefined;
-  var oldGStreamer = undefined;
-  var oldOpus = undefined;
-
-  try { oldAppleMedia = SpecialPowers.getBoolPref("media.apple.mp3.enabled"); } catch(ex) { }
-  try { oldGStreamer = SpecialPowers.getBoolPref("media.gstreamer.enabled"); } catch(ex) { }
-  try { oldDefault   = SpecialPowers.getIntPref("media.preload.default"); } catch(ex) { }
-  try { oldAuto      = SpecialPowers.getIntPref("media.preload.auto"); } catch(ex) { }
-  try { oldOpus      = SpecialPowers.getBoolPref("media.opus.enabled"); } catch(ex) { }
-
-  SpecialPowers.setIntPref("media.preload.default", 2); // preload_metadata
-  SpecialPowers.setIntPref("media.preload.auto", 3); // preload_enough
-  // test opus playback iff the pref exists
-  if (oldOpus !== undefined)
-    SpecialPowers.setBoolPref("media.opus.enabled", true);
-  if (oldGStreamer !== undefined)
-    SpecialPowers.setBoolPref("media.gstreamer.enabled", true);
-  if (oldAppleMedia !== undefined)
-    SpecialPowers.setBoolPref("media.apple.mp3.enabled", true);
-
-  window.addEventListener("unload", function() {
-    if (oldGStreamer !== undefined)
-      SpecialPowers.setBoolPref("media.gstreamer.enabled", oldGStreamer);
-    if (oldAppleMedia !== undefined)
-      SpecialPowers.setBoolPref("media.apple.mp3.enabled", oldAppleMedia);
-    SpecialPowers.setIntPref("media.preload.default", oldDefault);
-    SpecialPowers.setIntPref("media.preload.auto", oldAuto);
-    if (oldOpus !== undefined)
-      SpecialPowers.setBoolPref("media.opus.enabled", oldOpus);
-  }, false);
- })();
+SimpleTest.requestFlakyTimeout("untriaged");

@@ -8,18 +8,18 @@
 #define jit_mips64_LOpcodes_mips64_h__
 
 #define LIR_CPU_OPCODE_LIST(_)  \
+    _(Box)                      \
     _(Unbox)                    \
     _(UnboxFloatingPoint)       \
-    _(Box)                      \
     _(DivI)                     \
     _(DivPowTwoI)               \
     _(ModI)                     \
     _(ModPowTwoI)               \
     _(ModMaskI)                 \
-    _(PowHalfD)                 \
-    _(AsmJSUInt32ToDouble)      \
-    _(AsmJSUInt32ToFloat32)     \
     _(UDivOrMod)                \
-    _(AsmJSLoadFuncPtr)
+    _(PowHalfD)                 \
+    _(AsmJSLoadFuncPtr)         \
+    _(AsmJSUInt32ToDouble)      \
+    _(AsmJSUInt32ToFloat32)
 
 #endif // jit_mips64_LOpcodes_mips64_h__

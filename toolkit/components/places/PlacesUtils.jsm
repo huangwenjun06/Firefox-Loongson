@@ -30,6 +30,7 @@ const { classes: Cc, interfaces: Ci, results: Cr, utils: Cu } = Components;
 Cu.importGlobalProperties(["URL"]);
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+Cu.import("resource://gre/modules/AppConstants.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "Services",
                                   "resource://gre/modules/Services.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
@@ -54,14 +55,10 @@ XPCOMUtils.defineLazyModuleGetter(this, "History",
 // refresh instead.
 const MIN_TRANSACTIONS_FOR_BATCH = 5;
 
-#ifdef XP_MACOSX
-// On Mac OSX, the transferable system converts "\r\n" to "\n\n", where we
-// really just want "\n".
-const NEWLINE= "\n";
-#else
-// On other platforms, the transferable system converts "\r\n" to "\n".
-const NEWLINE = "\r\n";
-#endif
+// On Mac OSX, the transferable system converts "\r\n" to "\n\n", where
+// we really just want "\n". On other platforms, the transferable system
+// converts "\r\n" to "\n".
+const NEWLINE = AppConstants.platform == "macosx" ? "\n" : "\r\n";
 
 function QI_node(aNode, aIID) {
   var result = null;
@@ -945,7 +942,7 @@ this.PlacesUtils = {
        FROM moz_keywords k
        JOIN moz_places h ON h.id = k.place_id
        WHERE k.keyword = :keyword`);
-    stmt.params.keyword = aKeyword;
+    stmt.params.keyword = aKeyword.toLowerCase();
     try {
       if (!stmt.executeStep())
         return [ null, null ];
@@ -1682,6 +1679,7 @@ this.PlacesUtils = {
    *  - tags (string): csv string of the bookmark's tags.
    *  - charset (string): the last known charset of the bookmark.
    *  - keyword (string): the bookmark's keyword (unset if none).
+   *  - postData (string): the bookmark's keyword postData (unset if none).
    *  - iconuri (string): the bookmark's favicon url.
    * The last four properties are not set at all if they're irrelevant (e.g.
    * |charset| is not set if no charset was previously set for the bookmark
@@ -1696,7 +1694,7 @@ this.PlacesUtils = {
    * resolved to null.
    */
   promiseBookmarksTree: Task.async(function* (aItemGuid = "", aOptions = {}) {
-    let createItemInfoObject = (aRow, aIncludeParentGuid) => {
+    let createItemInfoObject = function* (aRow, aIncludeParentGuid) {
       let item = {};
       let copyProps = (...props) => {
         for (let prop of props) {
@@ -1735,9 +1733,11 @@ this.PlacesUtils = {
           // If this throws due to an invalid url, the item will be skipped.
           item.uri = NetUtil.newURI(aRow.getResultByName("url")).spec;
           // Keywords are cached, so this should be decently fast.
-          let keyword = PlacesUtils.bookmarks.getKeywordForBookmark(itemId);
-          if (keyword)
-            item.keyword = keyword;
+          let entry = yield PlacesUtils.keywords.fetch({ url: item.uri });
+          if (entry) {
+            item.keyword = entry.keyword;
+            item.postData = entry.postData;
+          }
           break;
         case Ci.nsINavBookmarksService.TYPE_FOLDER:
           item.type = PlacesUtils.TYPE_X_MOZ_PLACE_CONTAINER;
@@ -1759,7 +1759,7 @@ this.PlacesUtils = {
           break;
       }
       return item;
-    };
+    }.bind(this);
 
     const QUERY_STR =
       `WITH RECURSIVE
@@ -1812,40 +1812,34 @@ this.PlacesUtils = {
       return exclude;
     };
 
-    let rootItem = null, rootItemCreationEx = null;
+    let rootItem = null;
     let parentsMap = new Map();
-    try {
-      let conn = yield this.promiseDBConnection();
-      yield conn.executeCached(QUERY_STR,
-          { tags_folder: PlacesUtils.tagsFolderId,
-            charset_anno: PlacesUtils.CHARSET_ANNO,
-            item_guid: aItemGuid }, (aRow) => {
-        let item;
-        if (!rootItem) {
+    let conn = yield this.promiseDBConnection();
+    let rows = yield conn.executeCached(QUERY_STR,
+        { tags_folder: PlacesUtils.tagsFolderId,
+          charset_anno: PlacesUtils.CHARSET_ANNO,
+          item_guid: aItemGuid });
+    for (let row of rows) {
+      let item;
+      if (!rootItem) {
+        try {
           // This is the first row.
-          try {
-            rootItem = item = createItemInfoObject(aRow, true);
-          }
-          catch(ex) {
-            // If we couldn't figure out the root item, that is just as bad
-            // as a failed query.  Bail out.
-            rootItemCreationEx = ex;
-            throw StopIteration;
-          }
-
-          Object.defineProperty(rootItem, "itemsCount",
-                                { value: 1
-                                , writable: true
-                                , enumerable: false
-                                , configurable: false });
+          rootItem = item = yield createItemInfoObject(row, true);
+          Object.defineProperty(rootItem, "itemsCount", { value: 1
+                                                        , writable: true
+                                                        , enumerable: false
+                                                        , configurable: false });
+        } catch(ex) {
+          throw new Error("Failed to fetch the data for the root item " + ex);
         }
-        else {
+      } else {
+        try {
           // Our query guarantees that we always visit parents ahead of their
           // children.
-          item = createItemInfoObject(aRow, false);
-          let parentGuid = aRow.getResultByName("parentGuid");
+          item = yield createItemInfoObject(row, false);
+          let parentGuid = row.getResultByName("parentGuid");
           if (hasExcludeItemsCallback && shouldExcludeItem(item, parentGuid))
-            return;
+            continue;
 
           let parentItem = parentsMap.get(parentGuid);
           if ("children" in parentItem)
@@ -1854,17 +1848,15 @@ this.PlacesUtils = {
             parentItem.children = [item];
 
           rootItem.itemsCount++;
+        } catch(ex) {
+          // This is a bogus child, report and skip it.
+          Cu.reportError("Failed to fetch the data for an item " + ex);
+          continue;
         }
+      }
 
-        if (item.type == this.TYPE_X_MOZ_PLACE_CONTAINER)
-          parentsMap.set(item.guid, item);
-      });
-    } catch(e) {
-      throw new Error("Unable to query the database " + e);
-    }
-    if (rootItemCreationEx) {
-      throw new Error("Failed to fetch the data for the root item" +
-                      rootItemCreationEx);
+      if (item.type == this.TYPE_X_MOZ_PLACE_CONTAINER)
+        parentsMap.set(item.guid, item);
     }
 
     return rootItem;
@@ -2016,19 +2008,71 @@ XPCOMUtils.defineLazyGetter(this, "gAsyncDBWrapperPromised",
  */
 let Keywords = {
   /**
-   * Fetches URL and postData for a given keyword.
+   * Fetches a keyword entry based on keyword or URL.
    *
-   * @param keyword
-   *        The keyword to fetch.
+   * @param keywordOrEntry
+   *        Either the keyword to fetch or an entry providing keyword
+   *        or url property to find keywords for.  If both properties are set,
+   *        this returns their intersection.
+   * @param onResult [optional]
+   *        Callback invoked for each found entry.
    * @return {Promise}
    * @resolves to an object in the form: { keyword, url, postData },
-   *           or null if a keyword was not found.
+   *           or null if a keyword entry was not found.
    */
-  fetch(keyword) {
-    if (typeof(keyword) != "string")
+  fetch(keywordOrEntry, onResult=null) {
+    if (typeof(keywordOrEntry) == "string")
+      keywordOrEntry = { keyword: keywordOrEntry };
+
+    if (keywordOrEntry === null || typeof(keywordOrEntry) != "object" ||
+        (("keyword" in keywordOrEntry) && typeof(keywordOrEntry.keyword) != "string"))
       throw new Error("Invalid keyword");
-    keyword = keyword.trim().toLowerCase();
-    return gKeywordsCachePromise.then(cache => cache.get(keyword) || null);
+
+    let hasKeyword = "keyword" in keywordOrEntry;
+    let hasUrl = "url" in keywordOrEntry;
+
+    if (!hasKeyword && !hasUrl)
+      throw new Error("At least keyword or url must be provided");
+    if (onResult && typeof onResult != "function")
+      throw new Error("onResult callback must be a valid function");
+
+    if (hasUrl)
+      keywordOrEntry.url = new URL(keywordOrEntry.url);
+    if (hasKeyword)
+      keywordOrEntry.keyword = keywordOrEntry.keyword.trim().toLowerCase();
+
+    let safeOnResult = entry => {
+      if (onResult) {
+        try {
+          onResult(entry);
+        } catch (ex) {
+          Cu.reportError(ex);
+        }
+      }
+    };
+
+    return gKeywordsCachePromise.then(cache => {
+      let entries = [];
+      if (hasKeyword) {
+        let entry = cache.get(keywordOrEntry.keyword);
+        if (entry)
+          entries.push(entry);
+      }
+      if (hasUrl) {
+        for (let entry of cache.values()) {
+          if (entry.url.href == keywordOrEntry.url.href)
+            entries.push(entry);
+        }
+      }
+
+      entries = entries.filter(e => {
+        return (!hasUrl || e.url.href == keywordOrEntry.url.href) &&
+               (!hasKeyword || e.keyword == keywordOrEntry.keyword);
+      });
+
+      entries.forEach(safeOnResult);
+      return entries.length ? entries[0] : null;
+    });
   },
 
   /**
@@ -2254,6 +2298,7 @@ let GuidHelper = {
       return cached;
 
     let conn = yield PlacesUtils.promiseDBConnection();
+
     let rows = yield conn.executeCached(
       "SELECT b.id, b.guid from moz_bookmarks b WHERE b.guid = :guid LIMIT 1",
       { guid: aGuid });
@@ -2272,6 +2317,7 @@ let GuidHelper = {
       return cached;
 
     let conn = yield PlacesUtils.promiseDBConnection();
+
     let rows = yield conn.executeCached(
       "SELECT b.id, b.guid from moz_bookmarks b WHERE b.id = :id LIMIT 1",
       { id: aItemId });

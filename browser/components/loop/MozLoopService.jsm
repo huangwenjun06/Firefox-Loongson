@@ -63,6 +63,10 @@ XPCOMUtils.defineLazyModuleGetter(this, "injectLoopAPI",
 
 XPCOMUtils.defineLazyModuleGetter(this, "convertToRTCStatsReport",
   "resource://gre/modules/media/RTCStatsReport.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "loopUtils",
+  "resource:///modules/loop/utils.js", "utils")
+XPCOMUtils.defineLazyModuleGetter(this, "loopCrypto",
+  "resource:///modules/loop/crypto.js", "LoopCrypto");
 
 XPCOMUtils.defineLazyModuleGetter(this, "Chat", "resource:///modules/Chat.jsm");
 
@@ -165,10 +169,14 @@ let MozLoopServiceInternal = {
    */
   deferredRegistrations: new Map(),
 
-  get pushHandler() this.mocks.pushHandler || MozLoopPushHandler,
+  get pushHandler() {
+    return this.mocks.pushHandler || MozLoopPushHandler
+  },
 
   // The uri of the Loop server.
-  get loopServerUri() Services.prefs.getCharPref("loop.server"),
+  get loopServerUri() {
+    return Services.prefs.getCharPref("loop.server")
+  },
 
   /**
    * The initial delay for push registration. This ensures we don't start
@@ -823,7 +831,8 @@ let MozLoopServiceInternal = {
    *
    * @param {Object} conversationWindowData The data to be obtained by the
    *                                        window when it opens.
-   * @returns {Number} The id of the window.
+   * @returns {Number} The id of the window, null if a window could not
+   *                   be opened.
    */
   openChatWindow: function(conversationWindowData) {
     // So I guess the origin is the loop server!?
@@ -909,7 +918,9 @@ let MozLoopServiceInternal = {
       }.bind(this), true);
     };
 
-    Chat.open(null, origin, "", url, undefined, undefined, callback);
+    if (!Chat.open(null, origin, "", url, undefined, undefined, callback)) {
+      return null;
+    }
     return windowId;
   },
 
@@ -1200,7 +1211,7 @@ this.MozLoopService = {
     },
     error => {
       // If we get a non-object then setError was already called for a different error type.
-      if (typeof(error) == "object") {
+      if (typeof error == "object") {
         MozLoopServiceInternal.setError("initialization", error, () => MozLoopService.delayedInitialize(Promise.defer()));
       }
     });
@@ -1311,6 +1322,36 @@ this.MozLoopService = {
   get userProfile() {
     return getJSONPref("loop.fxa_oauth.tokendata") &&
            getJSONPref("loop.fxa_oauth.profile");
+  },
+
+  /**
+   * Gets the encryption key for this profile.
+   */
+  promiseProfileEncryptionKey: function() {
+    return new Promise((resolve, reject) => {
+      if (this.userProfile) {
+        // We're an FxA user.
+        // XXX Bug 1153788 will implement this for FxA.
+        reject(new Error("unimplemented"));
+        return;
+      }
+
+      // XXX Temporarily save in preferences until we've got some
+      // extra storage (bug 1152761).
+      if (!Services.prefs.prefHasUserValue("loop.key")) {
+        // Get a new value.
+        loopCrypto.generateKey().then(key => {
+          Services.prefs.setCharPref("loop.key", key);
+          resolve(key);
+        }).catch(function(error) {
+          MozLoopService.log.error(error);
+          reject(error);
+        });
+        return;
+      }
+
+      resolve(MozLoopService.getLoopPref("key"));
+    });
   },
 
   get errors() {
@@ -1511,7 +1552,7 @@ this.MozLoopService = {
     });
   },
 
-  openFxASettings: Task.async(function() {
+  openFxASettings: Task.async(function* () {
     try {
       let fxAOAuthClient = yield MozLoopServiceInternal.promiseFxAOAuthClient();
       if (!fxAOAuthClient) {

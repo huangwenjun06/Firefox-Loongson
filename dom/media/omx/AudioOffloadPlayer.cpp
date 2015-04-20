@@ -520,12 +520,14 @@ size_t AudioOffloadPlayer::FillBuffer(void* aData, size_t aSize)
   int64_t seekTimeUs = -1;
   while (sizeRemaining > 0) {
     MediaSource::ReadOptions options;
+    bool refreshSeekTime = false;
     {
       android::Mutex::Autolock autoLock(mLock);
 
       if (mSeekTarget.IsValid()) {
         seekTimeUs = mSeekTarget.mTime;
         options.setSeekTo(seekTimeUs);
+        refreshSeekTime = true;
 
         if (mInputBuffer) {
           mInputBuffer->release();
@@ -576,6 +578,7 @@ size_t AudioOffloadPlayer::FillBuffer(void* aData, size_t aSize)
       }
 
       if (mSeekTarget.IsValid() && seekTimeUs == mSeekTarget.mTime) {
+        MOZ_ASSERT(mSeekTarget.IsValid());
         mSeekTarget.Reset();
         if (!mSeekPromise.IsEmpty()) {
           AUDIO_OFFLOAD_LOG(PR_LOG_DEBUG, ("FillBuffer posting SEEK_COMPLETE"));
@@ -586,13 +589,15 @@ size_t AudioOffloadPlayer::FillBuffer(void* aData, size_t aSize)
         AUDIO_OFFLOAD_LOG(PR_LOG_DEBUG, ("seek is updated during unlocking mLock"));
       }
 
-     NotifyPositionChanged();
+      if (refreshSeekTime) {
+        NotifyPositionChanged();
 
-     // need to adjust the mStartPosUs for offload decoding since parser
-     // might not be able to get the exact seek time requested.
-     mStartPosUs = mPositionTimeMediaUs;
-     AUDIO_OFFLOAD_LOG(PR_LOG_DEBUG, ("Adjust seek time to: %.2f",
-       mStartPosUs / 1E6));
+        // need to adjust the mStartPosUs for offload decoding since parser
+        // might not be able to get the exact seek time requested.
+        mStartPosUs = mPositionTimeMediaUs;
+        AUDIO_OFFLOAD_LOG(PR_LOG_DEBUG, ("Adjust seek time to: %.2f",
+            mStartPosUs / 1E6));
+      }
     }
 
     if (mInputBuffer->range_length() == 0) {

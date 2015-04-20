@@ -15,6 +15,7 @@
 #include "mozilla/TextComposition.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TouchEvents.h"
+#include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/TabParent.h"
 #include "mozilla/dom/UIEvent.h"
@@ -81,6 +82,7 @@
 #include "nsIController.h"
 #include "nsICommandParams.h"
 #include "mozilla/Services.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/HTMLLabelElement.h"
 
 #include "mozilla/Preferences.h"
@@ -470,6 +472,7 @@ nsresult
 EventStateManager::PreHandleEvent(nsPresContext* aPresContext,
                                   WidgetEvent* aEvent,
                                   nsIFrame* aTargetFrame,
+                                  nsIContent* aTargetContent,
                                   nsEventStatus* aStatus)
 {
   NS_ENSURE_ARG_POINTER(aStatus);
@@ -478,6 +481,11 @@ EventStateManager::PreHandleEvent(nsPresContext* aPresContext,
     NS_ERROR("aEvent is null.  This should never happen.");
     return NS_ERROR_NULL_POINTER;
   }
+
+  NS_WARN_IF_FALSE(!aTargetFrame ||
+                   !aTargetFrame->GetContent() ||
+                   aTargetFrame->GetContent() == aTargetContent,
+                   "aTargetContent should be related with aTargetFrame");
 
   mCurrentTarget = aTargetFrame;
   mCurrentTargetContent = nullptr;
@@ -505,10 +513,9 @@ EventStateManager::PreHandleEvent(nsPresContext* aPresContext,
   WheelTransaction::OnEvent(aEvent);
 
   // Focus events don't necessarily need a frame.
-  if (NS_EVENT_NEEDS_FRAME(aEvent)) {
-    if (!mCurrentTarget) {
-      return NS_ERROR_NULL_POINTER;
-    }
+  if (!mCurrentTarget && !aTargetContent) {
+    NS_ERROR("mCurrentTarget and aTargetContent are null");
+    return NS_ERROR_NULL_POINTER;
   }
 #ifdef DEBUG
   if (aEvent->HasDragEventMessage() && sIsPointerLocked) {
@@ -1109,6 +1116,29 @@ EventStateManager::DispatchCrossProcessEvent(WidgetEvent* aEvent,
     *aStatus = nsEventStatus_eConsumeNoDefault;
     return remote->SendRealTouchEvent(*aEvent->AsTouchEvent());
   }
+  case eDragEventClass: {
+    if (remote->Manager()->IsContentParent()) {
+      remote->Manager()->AsContentParent()->MaybeInvokeDragSession(remote);
+    }
+
+    nsCOMPtr<nsIDragSession> dragSession = nsContentUtils::GetDragSession();
+    uint32_t dropEffect = nsIDragService::DRAGDROP_ACTION_NONE;
+    uint32_t action = nsIDragService::DRAGDROP_ACTION_NONE;
+    if (dragSession) {
+      dragSession->DragEventDispatchedToChildProcess();
+      dragSession->GetDragAction(&action);
+      nsCOMPtr<nsIDOMDataTransfer> initialDataTransfer;
+      dragSession->GetDataTransfer(getter_AddRefs(initialDataTransfer));
+      if (initialDataTransfer) {
+        initialDataTransfer->GetDropEffectInt(&dropEffect);
+      }
+    }
+
+    bool retval = remote->SendRealDragEvent(*aEvent->AsDragEvent(),
+                                            action, dropEffect);
+
+    return retval;
+  }
   default: {
     MOZ_CRASH("Attempt to send non-whitelisted event?");
   }
@@ -1164,6 +1194,13 @@ CrossProcessSafeEvent(const WidgetEvent& aEvent)
       return true;
     default:
       return false;
+    }
+  case eDragEventClass:
+    switch (aEvent.message) {
+    case NS_DRAGDROP_OVER:
+    case NS_DRAGDROP_EXIT:
+    case NS_DRAGDROP_DROP:
+      return true;
     }
   default:
     return false;
@@ -1483,10 +1520,12 @@ EventStateManager::BeginTrackingDragGesture(nsPresContext* aPresContext,
   // synthesized mouse move event.
   mGestureDownPoint = inDownEvent->refPoint + inDownEvent->widget->WidgetToScreenOffset();
 
-  inDownFrame->GetContentForEvent(inDownEvent,
-                                  getter_AddRefs(mGestureDownContent));
+  if (inDownFrame) {
+    inDownFrame->GetContentForEvent(inDownEvent,
+                                    getter_AddRefs(mGestureDownContent));
 
-  mGestureDownFrameOwner = inDownFrame->GetContent();
+    mGestureDownFrameOwner = inDownFrame->GetContent();
+  }
   mGestureModifiers = inDownEvent->modifiers;
   mGestureDownButtons = inDownEvent->buttons;
 
@@ -1496,6 +1535,12 @@ EventStateManager::BeginTrackingDragGesture(nsPresContext* aPresContext,
   }
 }
 
+void
+EventStateManager::BeginTrackingRemoteDragGesture(nsIContent* aContent)
+{
+  mGestureDownContent = aContent;
+  mGestureDownFrameOwner = aContent;
+}
 
 //
 // StopTrackingDragGesture
@@ -1597,8 +1642,9 @@ EventStateManager::GenerateDragGesture(nsPresContext* aPresContext,
       nsCOMPtr<nsIContent> eventContent, targetContent;
       mCurrentTarget->GetContentForEvent(aEvent, getter_AddRefs(eventContent));
       if (eventContent)
-        DetermineDragTarget(window, eventContent, dataTransfer,
-                            getter_AddRefs(selection), getter_AddRefs(targetContent));
+        DetermineDragTargetAndDefaultData(window, eventContent, dataTransfer,
+                                          getter_AddRefs(selection),
+                                          getter_AddRefs(targetContent));
 
       // Stop tracking the drag gesture now. This should stop us from
       // reentering GenerateDragGesture inside DOM event processing.
@@ -1694,11 +1740,11 @@ EventStateManager::GenerateDragGesture(nsPresContext* aPresContext,
 } // GenerateDragGesture
 
 void
-EventStateManager::DetermineDragTarget(nsPIDOMWindow* aWindow,
-                                       nsIContent* aSelectionTarget,
-                                       DataTransfer* aDataTransfer,
-                                       nsISelection** aSelection,
-                                       nsIContent** aTargetNode)
+EventStateManager::DetermineDragTargetAndDefaultData(nsPIDOMWindow* aWindow,
+                                                     nsIContent* aSelectionTarget,
+                                                     DataTransfer* aDataTransfer,
+                                                     nsISelection** aSelection,
+                                                     nsIContent** aTargetNode)
 {
   *aTargetNode = nullptr;
 
@@ -3025,9 +3071,7 @@ EventStateManager::PostHandleEvent(nsPresContext* aPresContext,
       // When APZ is enabled, the actual scroll animation might be handled by
       // the compositor.
       WheelPrefs::Action action;
-      if (gfxPrefs::AsyncPanZoomEnabled() &&
-          layers::APZCTreeManager::WillHandleWheelEvent(wheelEvent))
-      {
+      if (wheelEvent->mFlags.mHandledByAPZ) {
         action = WheelPrefs::ACTION_NONE;
       } else {
         action = WheelPrefs::GetInstance()->ComputeActionFor(wheelEvent);
@@ -3151,6 +3195,7 @@ EventStateManager::PostHandleEvent(nsPresContext* aPresContext,
       // "none". This way, if the event is just ignored, no drop will be
       // allowed.
       uint32_t dropEffect = nsIDragService::DRAGDROP_ACTION_NONE;
+      uint32_t action = nsIDragService::DRAGDROP_ACTION_NONE;
       if (nsEventStatus_eConsumeNoDefault == *aStatus) {
         // if the event has a dataTransfer set, use it.
         if (dragEvent->dataTransfer) {
@@ -3168,7 +3213,6 @@ EventStateManager::PostHandleEvent(nsPresContext* aPresContext,
           // based on the effectAllowed below.
           dataTransfer = initialDataTransfer;
 
-          uint32_t action;
           dragSession->GetDragAction(&action);
 
           // filter the drop effect based on the action. Use UNINITIALIZED as
@@ -3190,7 +3234,6 @@ EventStateManager::PostHandleEvent(nsPresContext* aPresContext,
         // effectAllowed state doesn't include that type of action. If the
         // dropEffect is "none", then the action will be 'none' so a drop will
         // not be allowed.
-        uint32_t action = nsIDragService::DRAGDROP_ACTION_NONE;
         if (effectAllowed == nsIDragService::DRAGDROP_ACTION_UNINITIALIZED ||
             dropEffect & effectAllowed)
           action = dropEffect;
@@ -3213,6 +3256,12 @@ EventStateManager::PostHandleEvent(nsPresContext* aPresContext,
       } else if (aEvent->message == NS_DRAGDROP_OVER && !isChromeDoc) {
         // No one called preventDefault(), so handle drop only in chrome.
         dragSession->SetOnlyChromeDrop(true);
+      }
+      if (ContentChild* child = ContentChild::GetSingleton()) {
+        child->SendUpdateDropEffect(action, dropEffect);
+      }
+      if (dispatchedToContentProcess) {
+        dragSession->SetCanDrop(true);
       }
 
       // now set the drop effect in the initial dataTransfer. This ensures
@@ -4044,7 +4093,7 @@ EventStateManager::GenerateMouseEnterExit(WidgetMouseEvent* aMouseEvent)
           // in the other branch here.
           sSynthCenteringPoint = center;
           aMouseEvent->widget->SynthesizeNativeMouseMove(
-            center + aMouseEvent->widget->WidgetToScreenOffset());
+            center + aMouseEvent->widget->WidgetToScreenOffset(), nullptr);
         } else if (aMouseEvent->refPoint == sSynthCenteringPoint) {
           // This is the "synthetic native" event we dispatched to re-center the
           // pointer. Cancel it so we don't expose the centering move to content.
@@ -4179,7 +4228,8 @@ EventStateManager::SetPointerLock(nsIWidget* aWidget,
     sLastRefPoint = GetWindowInnerRectCenter(aElement->OwnerDoc()->GetWindow(),
                                              aWidget,
                                              mPresContext);
-    aWidget->SynthesizeNativeMouseMove(sLastRefPoint + aWidget->WidgetToScreenOffset());
+    aWidget->SynthesizeNativeMouseMove(sLastRefPoint + aWidget->WidgetToScreenOffset(),
+                                       nullptr);
 
     // Retarget all events to this element via capture.
     nsIPresShell::SetCapturingContent(aElement, CAPTURE_POINTERLOCK);
@@ -4194,7 +4244,8 @@ EventStateManager::SetPointerLock(nsIWidget* aWidget,
     // pre-pointerlock position, so that the synthetic mouse event reports
     // no movement.
     sLastRefPoint = mPreLockPoint;
-    aWidget->SynthesizeNativeMouseMove(mPreLockPoint + aWidget->WidgetToScreenOffset());
+    aWidget->SynthesizeNativeMouseMove(mPreLockPoint + aWidget->WidgetToScreenOffset(),
+                                       nullptr);
 
     // Don't retarget events to this element any more.
     nsIPresShell::SetCapturingContent(nullptr, CAPTURE_POINTERLOCK);
@@ -4351,7 +4402,9 @@ EventStateManager::SetClickCount(nsPresContext* aPresContext,
 {
   nsCOMPtr<nsIContent> mouseContent;
   nsIContent* mouseContentParent = nullptr;
-  mCurrentTarget->GetContentForEvent(aEvent, getter_AddRefs(mouseContent));
+  if (mCurrentTarget) {
+    mCurrentTarget->GetContentForEvent(aEvent, getter_AddRefs(mouseContent));
+  }
   if (mouseContent) {
     if (mouseContent->IsNodeOfType(nsINode::eTEXT)) {
       mouseContent = mouseContent->GetParent();
@@ -4564,7 +4617,7 @@ static nsIContent* FindCommonAncestor(nsIContent *aNode1, nsIContent *aNode2)
     nsIContent *anc1 = aNode1;
     for (;;) {
       ++offset;
-      nsIContent* parent = anc1->GetParent();
+      nsIContent* parent = anc1->GetFlattenedTreeParent();
       if (!parent)
         break;
       anc1 = parent;
@@ -4572,7 +4625,7 @@ static nsIContent* FindCommonAncestor(nsIContent *aNode1, nsIContent *aNode2)
     nsIContent *anc2 = aNode2;
     for (;;) {
       --offset;
-      nsIContent* parent = anc2->GetParent();
+      nsIContent* parent = anc2->GetFlattenedTreeParent();
       if (!parent)
         break;
       anc2 = parent;
@@ -4581,16 +4634,16 @@ static nsIContent* FindCommonAncestor(nsIContent *aNode1, nsIContent *aNode2)
       anc1 = aNode1;
       anc2 = aNode2;
       while (offset > 0) {
-        anc1 = anc1->GetParent();
+        anc1 = anc1->GetFlattenedTreeParent();
         --offset;
       }
       while (offset < 0) {
-        anc2 = anc2->GetParent();
+        anc2 = anc2->GetFlattenedTreeParent();
         ++offset;
       }
       while (anc1 != anc2) {
-        anc1 = anc1->GetParent();
-        anc2 = anc2->GetParent();
+        anc1 = anc1->GetFlattenedTreeParent();
+        anc2 = anc2->GetFlattenedTreeParent();
       }
       return anc1;
     }
@@ -4646,7 +4699,7 @@ EventStateManager::UpdateAncestorState(nsIContent* aStartNode,
                                        bool aAddState)
 {
   for (; aStartNode && aStartNode != aStopBefore;
-       aStartNode = aStartNode->GetParentElementCrossingShadowRoot()) {
+       aStartNode = aStartNode->GetFlattenedTreeParent()) {
     // We might be starting with a non-element (e.g. a text node) and
     // if someone is doing something weird might be ending with a
     // non-element too (e.g. a document fragment)
@@ -4674,7 +4727,7 @@ EventStateManager::UpdateAncestorState(nsIContent* aStartNode,
     // still be in hover state.  To handle this situation we need to
     // keep walking up the tree and any time we find a label mark its
     // corresponding node as still in our state.
-    for ( ; aStartNode; aStartNode = aStartNode->GetParentElementCrossingShadowRoot()) {
+    for ( ; aStartNode; aStartNode = aStartNode->GetFlattenedTreeParent()) {
       if (!aStartNode->IsElement()) {
         continue;
       }

@@ -67,6 +67,7 @@ static char const * const sDefaultCodecCaps[][2] = {
 
 static char const * const sPluginBlacklist[] = {
   "flump3dec",
+  "h264parse",
 };
 
 GStreamerFormatHelper::GStreamerFormatHelper()
@@ -251,7 +252,8 @@ static gboolean FactoryFilter(GstPluginFeature *aFeature, gpointer)
   const gchar *className =
     gst_element_factory_get_klass(GST_ELEMENT_FACTORY_CAST(aFeature));
 
-  if (!strstr(className, "Decoder") && !strstr(className, "Demux")) {
+  if (!strstr(className, "Decoder") && !strstr(className, "Demux") &&
+      !strstr(className, "Parser")) {
     return FALSE;
   }
 
@@ -277,7 +279,11 @@ static bool SupportsCaps(GstElementFactory *aFactory, GstCaps *aCaps)
       continue;
     }
 
-    if (gst_caps_can_intersect(gst_static_caps_get(&templ->static_caps), aCaps)) {
+    bool supported = gst_caps_can_intersect(caps, aCaps);
+
+    gst_caps_unref(caps);
+
+    if (supported) {
       return true;
     }
   }
@@ -305,11 +311,11 @@ bool GStreamerFormatHelper::HaveElementsToProcessCaps(GstCaps* aCaps) {
       }
     }
 
+    gst_caps_unref(caps);
+
     if (!found) {
       return false;
     }
-
-    gst_caps_unref(caps);
   }
 
   return true;

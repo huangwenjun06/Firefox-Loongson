@@ -74,7 +74,7 @@ body {
   display: none;
   text-align: center;
   width: 100%;
-  font-size: 0.9rem;
+  font-size: 0.9em;
 }
 
 .header {
@@ -101,7 +101,7 @@ body {
 }
 
 .header > h1 {
-  font-size: 1.33rem;
+  font-size: 1.33em;
   font-weight: 700;
   line-height: 1.1em;
   width: 100%;
@@ -146,16 +146,16 @@ body {
 /* This covers caption, domain, and credits
    texts in the reader UI */
 
-.content .wp-caption-text,
-.content figcaption,
+#moz-reader-content .wp-caption-text,
+#moz-reader-content figcaption,
 .header > .domain,
 .header > .credits {
-  font-size: 0.9rem;
+  font-size: 0.9em;
 }
 
-.content {
+#moz-reader-content {
   display: none;
-  font-size: 1rem;
+  font-size: 1em;
 }
 
 .content a {
@@ -175,7 +175,7 @@ body {
   height: auto !important;
 }
 
-.content p {
+#moz-reader-content p {
   line-height: 1.4em !important;
   margin: 0px !important;
   margin-bottom: 20px !important;
@@ -258,8 +258,8 @@ body {
   border-left-color: #777777 !important;
 }
 
-.content ul,
-.content ol {
+#moz-reader-content ul,
+#moz-reader-content ol {
   margin: 0px !important;
   margin-bottom: 20px !important;
   padding: 0px !important;
@@ -268,12 +268,21 @@ body {
 
 .content ul {
   -moz-padding-start: 30px !important;
-  list-style: disk !important;
+  list-style: disc !important;
 }
 
 .content ol {
   -moz-padding-start: 35px !important;
   list-style: decimal !important;
+}
+
+/* Hide elements with common "hidden" class names */
+#moz-reader-content .visually-hidden,
+#moz-reader-content .visuallyhidden,
+#moz-reader-content .hidden,
+#moz-reader-content .invisible,
+#moz-reader-content .sr-only {
+  display: none;
 }
 
 /*======= Controls toolbar =======*/
@@ -290,6 +299,7 @@ body {
   list-style: none;
   background-color: #EBEBF0;
   border-top: 1px solid #D7D9DB;
+  display: none;
 }
 
 .toolbar[visible] {
@@ -398,8 +408,8 @@ body {
   flex: 0;
   font-size: 24px;
   color: #000000;
-  margin-left: 40px;
-  margin-right: 40px;
+  margin: 0 30px;
+  padding: 0 10px;
 }
 
 .serif-button {
@@ -418,12 +428,14 @@ body {
 
 .minus-button {
   background-size: 24px 6px;
-  margin-left: 60px;
+  margin-left: 50px;
+  padding: 0 5px;
 }
 
 .plus-button {
   background-size: 24px 24px;
-  margin-right: 60px;
+  margin-right: 50px;
+  padding: 0 5px;
 }
 
 #color-scheme-buttons > button {

@@ -611,7 +611,10 @@ js::Nursery::traceObject(MinorCollectionTracer* trc, JSObject* obj)
     if (!nobj->hasEmptyElements() && !nobj->denseElementsAreCopyOnWrite())
         markSlots(trc, nobj->getDenseElements(), nobj->getDenseInitializedLength());
 
-    HeapSlot* fixedStart, *fixedEnd, *dynStart, *dynEnd;
+    HeapSlot* fixedStart;
+    HeapSlot* fixedEnd;
+    HeapSlot* dynStart;
+    HeapSlot* dynEnd;
     nobj->getSlotRange(0, nobj->slotSpan(), &fixedStart, &fixedEnd, &dynStart, &dynEnd);
     markSlots(trc, fixedStart, fixedEnd);
     markSlots(trc, dynStart, dynEnd);
@@ -690,14 +693,17 @@ js::Nursery::moveObjectToTenured(MinorCollectionTracer* trc,
 
     js_memcpy(dst, src, srcSize);
     if (src->isNative()) {
-        NativeObject* ndst = &dst->as<NativeObject>(), *nsrc = &src->as<NativeObject>();
+        NativeObject* ndst = &dst->as<NativeObject>();
+        NativeObject* nsrc = &src->as<NativeObject>();
         tenuredSize += moveSlotsToTenured(ndst, nsrc, dstKind);
         tenuredSize += moveElementsToTenured(ndst, nsrc, dstKind);
 
         // The shape's list head may point into the old object. This can only
         // happen for dictionaries, which are native objects.
-        if (&nsrc->shape_ == ndst->shape_->listp)
+        if (&nsrc->shape_ == ndst->shape_->listp) {
+            MOZ_ASSERT(nsrc->shape_->inDictionary());
             ndst->shape_->listp = &ndst->shape_;
+        }
     }
 
     if (src->is<InlineTypedObject>())
@@ -849,13 +855,6 @@ js::Nursery::collect(JSRuntime* rt, JS::gcreason::Reason reason, ObjectGroupList
     sb.markGenericEntries(&trc);
     TIME_END(markGenericEntries);
 
-    TIME_START(checkHashTables);
-#ifdef JS_GC_ZEAL
-    if (rt->gcZeal() == ZealCheckHashTablesOnMinorGC)
-        CheckHashTablesAfterMovingGC(rt);
-#endif
-    TIME_END(checkHashTables);
-
     TIME_START(markRuntime);
     rt->gc.markRuntime(&trc);
     TIME_END(markRuntime);
@@ -910,6 +909,14 @@ js::Nursery::collect(JSRuntime* rt, JS::gcreason::Reason reason, ObjectGroupList
     TIME_START(clearStoreBuffer);
     rt->gc.storeBuffer.clear();
     TIME_END(clearStoreBuffer);
+
+    // Make sure hashtables have been updated after the collection.
+    TIME_START(checkHashTables);
+#ifdef JS_GC_ZEAL
+    if (rt->gcZeal() == ZealCheckHashTablesOnMinorGC)
+        CheckHashTablesAfterMovingGC(rt);
+#endif
+    TIME_END(checkHashTables);
 
     // Resize the nursery.
     TIME_START(resize);

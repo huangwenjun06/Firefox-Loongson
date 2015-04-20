@@ -12,6 +12,7 @@ include protocol PBrowser;
 include protocol PCellBroadcast;
 include protocol PCompositor;
 include protocol PContentBridge;
+include protocol PContentPermissionRequest;
 include protocol PCycleCollectWithLogs;
 include protocol PCrashReporter;
 include protocol PDocAccessible;
@@ -27,7 +28,15 @@ include protocol PImageBridge;
 include protocol PMemoryReportRequest;
 include protocol PMobileConnection;
 include protocol PNecko;
+// FIXME This is pretty ridiculous, but we have to keep the order of the
+//       following 4 includes, or the parser is confused about PGMPContent
+//       bridging PContent and PGMP. As soon as it registers the bridge between
+//       PContent and PPluginModule it seems to think that PContent's parent and
+//       child live in the same process!
+include protocol PGMPContent;
+include protocol PGMPService;
 include protocol PPluginModule;
+include protocol PGMP;
 include protocol PPrinting;
 include protocol POfflineCacheUpdate;
 include protocol PScreenManager;
@@ -47,6 +56,7 @@ include PTabContext;
 include URIParams;
 include PluginTypes;
 include ProtocolTypes;
+include PContentPermission;
 
 // Workaround to prevent error if PContentChild.cpp & PContentBridgeParent.cpp
 // are put into different UnifiedProtocolsXX.cpp files.
@@ -364,6 +374,7 @@ prio(normal upto urgent) sync protocol PContent
     parent opens PProcessHangMonitor;
     parent opens PSharedBufferManager;
     parent opens PImageBridge;
+    parent opens PGMPService;
     child opens PBackground;
 
     manages PAsmJSCacheEntry;
@@ -371,6 +382,7 @@ prio(normal upto urgent) sync protocol PContent
     manages PBluetooth;
     manages PBrowser;
     manages PCellBroadcast;
+    manages PContentPermissionRequest;
     manages PCrashReporter;
     manages PCycleCollectWithLogs;
     manages PDocAccessible;
@@ -446,6 +458,12 @@ child:
     async AudioChannelNotify();
 
     async SpeakerManagerNotify();
+
+    /**
+     * Communication between the PuppetBidiKeyboard and the actual
+     * BidiKeyboard hosted by the parent
+     */
+    async BidiKeyboardNotify(bool isLangRTL);
 
     async DataStoreNotify(uint32_t aAppId, nsString aName,
                           nsString aManifestURL);
@@ -561,6 +579,9 @@ child:
     prio(high) sync GetProfile()
       returns (nsCString aProfile);
 
+    InvokeDragSession(IPCDataTransfer[] transfers, uint32_t action);
+
+    EndDragSession(bool aDoneDrag, bool aUserCancelled);
     NuwaFreeze();
 
     async DomainSetChanged(uint32_t aSetType, uint32_t aChangeType, OptionalURIParams aDomain);
@@ -572,6 +593,12 @@ child:
     async Shutdown();
 
     async LoadProcessScript(nsString url);
+
+    /**
+     * Requests a full native update of a native plugin child window. This is
+     * a Windows specific call.
+     */
+    async UpdateWindow(uintptr_t aChildId);
 
 parent:
     /**
@@ -598,7 +625,7 @@ parent:
     sync GetProcessAttributes()
         returns (ContentParentId cpId, bool isForApp, bool isForBrowser);
     sync GetXPCOMProcessAttributes()
-        returns (bool isOffline, nsString[] dictionaries,
+        returns (bool isOffline, bool isLangRTL, nsString[] dictionaries,
                  ClipboardCapabilities clipboardCaps,
                  DomainPolicyClone domainPolicy);
 
@@ -608,13 +635,17 @@ parent:
         returns (ContentParentId cpId, bool isForApp, bool isForBrowser, TabId tabId);
     sync BridgeToChildProcess(ContentParentId cpId);
 
+    async CreateGMPService();
+    sync GetGMPPluginVersionForAPI(nsCString api, nsCString[] tags)
+        returns (bool hasPlugin, nsCString version);
+
     /**
      * This call connects the content process to a plugin process. While this
      * call runs, a new PluginModuleParent will be created in the ContentChild
      * via bridging. The corresponding PluginModuleChild will live in the plugin
      * process.
      */
-    sync LoadPlugin(uint32_t pluginId) returns (nsresult rv);
+    sync LoadPlugin(uint32_t aPluginId) returns (nsresult aResult, uint32_t aRunID);
 
     /**
      * This call is used by asynchronous plugin instantiation to notify the
@@ -921,6 +952,26 @@ parent:
      * its shutdown tasks.
      */
     async FinishShutdown();
+
+    UpdateDropEffect(uint32_t aDragAction, uint32_t aDropEffect);
+
+    /**
+     * Initiates an asynchronous request for permission for the
+     * provided principal.
+     *
+     * @param aRequests
+     *   The array of permissions to request.
+     * @param aPrincipal
+     *   The principal of the request.
+     * @param tabId
+     *   To identify which tab issues this request.
+     *
+     * NOTE: The principal is untrusted in the parent process. Only
+     *       principals that can live in the content process should
+     *       provided.
+     */
+    PContentPermissionRequest(PermissionRequest[] aRequests, Principal aPrincipal,
+                              TabId tabId);
 
 both:
      AsyncMessage(nsString aMessage, ClonedMessageData aData,

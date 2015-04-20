@@ -35,6 +35,7 @@
 #endif
 #include "prmjtime.h"
 
+#include "builtin/AtomicsObject.h"
 #include "frontend/Parser.h"
 #include "jit/IonCode.h"
 #include "js/Class.h"
@@ -134,12 +135,12 @@ AsmJSModule::trace(JSTracer* trc)
         globals_[i].trace(trc);
     for (unsigned i = 0; i < exits_.length(); i++) {
         if (exitIndexToGlobalDatum(i).fun)
-            MarkObject(trc, &exitIndexToGlobalDatum(i).fun, "asm.js imported function");
+            TraceEdge(trc, &exitIndexToGlobalDatum(i).fun, "asm.js imported function");
     }
     for (unsigned i = 0; i < exports_.length(); i++)
         exports_[i].trace(trc);
     for (unsigned i = 0; i < names_.length(); i++)
-        MarkStringUnbarriered(trc, &names_[i].name(), "asm.js module function name");
+        TraceManuallyBarrieredEdge(trc, &names_[i].name(), "asm.js module function name");
 #if defined(MOZ_VTUNE) || defined(JS_ION_PERF)
     for (unsigned i = 0; i < profiledFunctions_.length(); i++)
         profiledFunctions_[i].trace(trc);
@@ -149,13 +150,13 @@ AsmJSModule::trace(JSTracer* trc)
         perfProfiledBlocksFunctions_[i].trace(trc);
 #endif
     if (globalArgumentName_)
-        MarkStringUnbarriered(trc, &globalArgumentName_, "asm.js global argument name");
+        TraceManuallyBarrieredEdge(trc, &globalArgumentName_, "asm.js global argument name");
     if (importArgumentName_)
-        MarkStringUnbarriered(trc, &importArgumentName_, "asm.js import argument name");
+        TraceManuallyBarrieredEdge(trc, &importArgumentName_, "asm.js import argument name");
     if (bufferArgumentName_)
-        MarkStringUnbarriered(trc, &bufferArgumentName_, "asm.js buffer argument name");
+        TraceManuallyBarrieredEdge(trc, &bufferArgumentName_, "asm.js buffer argument name");
     if (maybeHeap_)
-        gc::MarkObject(trc, &maybeHeap_, "asm.js heap");
+        TraceEdge(trc, &maybeHeap_, "asm.js heap");
 }
 
 void
@@ -701,6 +702,18 @@ AddressOf(AsmJSImmKind kind, ExclusiveContext* cx)
         return RedirectCall(FuncCast(__aeabi_idivmod), Args_General2);
       case AsmJSImm_aeabi_uidivmod:
         return RedirectCall(FuncCast(__aeabi_uidivmod), Args_General2);
+      case AsmJSImm_AtomicCmpXchg:
+        return RedirectCall(FuncCast<int32_t (int32_t, int32_t, int32_t, int32_t)>(js::atomics_cmpxchg_asm_callout), Args_General4);
+      case AsmJSImm_AtomicFetchAdd:
+        return RedirectCall(FuncCast<int32_t (int32_t, int32_t, int32_t)>(js::atomics_add_asm_callout), Args_General3);
+      case AsmJSImm_AtomicFetchSub:
+        return RedirectCall(FuncCast<int32_t (int32_t, int32_t, int32_t)>(js::atomics_sub_asm_callout), Args_General3);
+      case AsmJSImm_AtomicFetchAnd:
+        return RedirectCall(FuncCast<int32_t (int32_t, int32_t, int32_t)>(js::atomics_and_asm_callout), Args_General3);
+      case AsmJSImm_AtomicFetchOr:
+        return RedirectCall(FuncCast<int32_t (int32_t, int32_t, int32_t)>(js::atomics_or_asm_callout), Args_General3);
+      case AsmJSImm_AtomicFetchXor:
+        return RedirectCall(FuncCast<int32_t (int32_t, int32_t, int32_t)>(js::atomics_xor_asm_callout), Args_General3);
 #endif
       case AsmJSImm_ModD:
         return RedirectCall(FuncCast(NumberMod), Args_Double_DoubleDouble);
@@ -1753,6 +1766,21 @@ AsmJSModule::setProfilingEnabled(bool enabled, JSContext* cx)
         MOZ_ASSERT_IF(profilingEnabled_, callee == profilingEntry);
         MOZ_ASSERT_IF(!profilingEnabled_, callee == entry);
         uint8_t* newCallee = enabled ? profilingEntry : entry;
+
+#if defined(JS_CODEGEN_MIPS) || defined(JS_CODEGEN_MIPS64)
+        // All longJumps are stored in staticLinkData_.relativeLinks by finish.
+        // Every staticLinkData_.relativeLinks will be pathed by staticallyLink.
+        // So, If profiling changed, we must update jump target to call profiling
+        // prologue or normal.
+        uint32_t patchAtOffset = (uint8_t*) instr - code_;
+        for (size_t i = 0; i < staticLinkData_.relativeLinks.length(); i++) {
+            RelativeLink* link = &staticLinkData_.relativeLinks[i];
+            if (patchAtOffset == link->patchAtOffset) {
+                link->targetOffset = enabled ? codeRange->begin() : codeRange->entry();
+                break;
+            }
+        }
+#endif
 
 #if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
         X86Encoding::SetRel32(callerRetAddr, newCallee);

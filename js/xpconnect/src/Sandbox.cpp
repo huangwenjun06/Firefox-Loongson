@@ -109,7 +109,8 @@ SandboxDump(JSContext* cx, unsigned argc, jsval* vp)
 
 #if defined(XP_MACOSX)
     // Be nice and convert all \r to \n.
-    char* c = cstr, *cEnd = cstr + strlen(cstr);
+    char* c = cstr;
+    char* cEnd = cstr + strlen(cstr);
     while (c < cEnd) {
         if (*c == '\r')
             *c = '\n';
@@ -1506,7 +1507,7 @@ xpc::EvalInSandbox(JSContext* cx, HandleObject sandboxArg, const nsAString& sour
     NS_ENSURE_TRUE(prin, NS_ERROR_FAILURE);
 
     nsAutoCString filenameBuf;
-    if (!filename.IsVoid()) {
+    if (!filename.IsVoid() && filename.Length() != 0) {
         filenameBuf.Assign(filename);
     } else {
         // Default to the spec of the principal.

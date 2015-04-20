@@ -8,9 +8,6 @@
 #define jit_LOpcodes_h
 
 #define LIR_COMMON_OPCODE_LIST(_)   \
-    _(Label)                        \
-    _(Nop)                          \
-    _(Mop)                          \
     _(OsiPoint)                     \
     _(MoveGroup)                    \
     _(Integer)                      \
@@ -208,6 +205,8 @@
     _(GuardObjectGroup)             \
     _(GuardObjectIdentity)          \
     _(GuardClass)                   \
+    _(GuardUnboxedExpando)          \
+    _(LoadUnboxedExpando)           \
     _(TypeBarrierV)                 \
     _(TypeBarrierO)                 \
     _(MonitorTypes)                 \

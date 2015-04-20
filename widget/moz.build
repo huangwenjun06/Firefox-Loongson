@@ -131,6 +131,10 @@ EXPORTS.mozilla += [
     'WidgetUtils.h',
 ]
 
+EXPORTS.mozilla.widget += [
+    'PuppetBidiKeyboard.h',
+]
+
 UNIFIED_SOURCES += [
     'ContentHelper.cpp',
     'GfxDriverInfo.cpp',
@@ -145,6 +149,7 @@ UNIFIED_SOURCES += [
     'nsClipboardProxy.cpp',
     'nsColorPickerProxy.cpp',
     'nsContentProcessWidgetFactory.cpp',
+    'nsDragServiceProxy.cpp',
     'nsFilePickerProxy.cpp',
     'nsHTMLFormatConverter.cpp',
     'nsIdleService.cpp',
@@ -157,6 +162,7 @@ UNIFIED_SOURCES += [
     'nsTransferable.cpp',
     'nsXPLookAndFeel.cpp',
     'PluginWidgetProxy.cpp',
+    'PuppetBidiKeyboard.cpp',
     'PuppetWidget.cpp',
     'ScreenProxy.cpp',
     'SharedWidgetUtils.cpp',
@@ -218,6 +224,8 @@ MSVC_ENABLE_PGO = True
 include('/ipc/chromium/chromium-config.mozbuild')
 
 LOCAL_INCLUDES += [
+    '/dom/base',
+    '/dom/ipc',
     '/layout/base',
     '/layout/forms',
     '/layout/generic',

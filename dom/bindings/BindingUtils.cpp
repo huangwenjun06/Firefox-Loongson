@@ -13,6 +13,7 @@
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/unused.h"
 
 #include "AccessCheck.h"
 #include "jsfriendapi.h"
@@ -46,6 +47,7 @@
 #include "mozilla/jsipc/CrossProcessObjectWrappers.h"
 #include "WorkerPrivate.h"
 #include "nsDOMClassInfo.h"
+#include "ipc/ErrorIPCUtils.h"
 
 namespace mozilla {
 namespace dom {
@@ -147,6 +149,36 @@ ErrorResult::ThrowErrorWithMessage(va_list ap, const dom::ErrNum errorNumber,
     message->mArgs.AppendElement(*va_arg(ap, nsString*));
   }
   mMessage = message;
+#ifdef DEBUG
+  mHasMessage = true;
+#endif
+}
+
+void
+ErrorResult::SerializeMessage(IPC::Message* aMsg) const
+{
+  using namespace IPC;
+  MOZ_ASSERT(mMessage);
+  MOZ_ASSERT(mHasMessage);
+  WriteParam(aMsg, mMessage->mArgs);
+  WriteParam(aMsg, mMessage->mErrorNumber);
+}
+
+bool
+ErrorResult::DeserializeMessage(const IPC::Message* aMsg, void** aIter)
+{
+  using namespace IPC;
+  nsAutoPtr<Message> readMessage(new Message());
+  if (!ReadParam(aMsg, aIter, &readMessage->mArgs) ||
+      !ReadParam(aMsg, aIter, &readMessage->mErrorNumber)) {
+    return false;
+  }
+  MOZ_ASSERT(!mHasMessage);
+  mMessage = readMessage.forget();
+#ifdef DEBUG
+  mHasMessage = true;
+#endif
+  return true;
 }
 
 void
@@ -171,6 +203,7 @@ void
 ErrorResult::ReportErrorWithMessage(JSContext* aCx)
 {
   MOZ_ASSERT(mMessage, "ReportErrorWithMessage() can be called only once");
+  MOZ_ASSERT(mHasMessage);
 
   Message* message = mMessage;
   const uint32_t argCount = message->mArgs.Length();
@@ -193,6 +226,9 @@ ErrorResult::ClearMessage()
   if (IsErrorWithMessage()) {
     delete mMessage;
     mMessage = nullptr;
+#ifdef DEBUG
+    mHasMessage = false;
+#endif
   }
 }
 
@@ -204,6 +240,9 @@ ErrorResult::ThrowJSException(JSContext* cx, JS::Handle<JS::Value> exn)
 
   if (IsErrorWithMessage()) {
     delete mMessage;
+#ifdef DEBUG
+    mHasMessage = false;
+#endif
   }
 
   // Make sure mJSException is initialized _before_ we try to root it.  But
@@ -299,6 +338,44 @@ ErrorResult::ReportNotEnoughArgsError(JSContext* cx,
 
   nsPrintfCString errorMessage("%s.%s", ifaceName, memberName);
   ThrowErrorMessage(cx, dom::MSG_MISSING_ARGUMENTS, errorMessage.get());
+}
+
+ErrorResult&
+ErrorResult::operator=(ErrorResult&& aRHS)
+{
+#ifdef DEBUG
+  mMightHaveUnreportedJSException = aRHS.mMightHaveUnreportedJSException;
+  aRHS.mMightHaveUnreportedJSException = false;
+#endif
+  if (aRHS.IsErrorWithMessage()) {
+    mMessage = aRHS.mMessage;
+    aRHS.mMessage = nullptr;
+#ifdef DEBUG
+    mHasMessage = aRHS.mHasMessage;
+    aRHS.mHasMessage = false;
+#endif
+  } else if (aRHS.IsJSException()) {
+    JSContext* cx = nsContentUtils::GetDefaultJSContextForThread();
+    MOZ_ASSERT(cx);
+    mJSException.setUndefined();
+    if (!js::AddRawValueRoot(cx, &mJSException, "ErrorResult::mJSException")) {
+      MOZ_CRASH("Could not root mJSException, we're about to OOM");
+    }
+    mJSException = aRHS.mJSException;
+    aRHS.mJSException.setUndefined();
+    js::RemoveRawValueRoot(cx, &aRHS.mJSException);
+  } else {
+    // Null out the union on both sides for hygiene purposes.
+    mMessage = aRHS.mMessage = nullptr;
+#ifdef DEBUG
+    mHasMessage = aRHS.mHasMessage = false;
+#endif
+  }
+  // Note: It's important to do this last, since this affects the condition
+  // checks above!
+  mResult = aRHS.mResult;
+  aRHS.mResult = NS_OK;
+  return *this;
 }
 
 namespace dom {

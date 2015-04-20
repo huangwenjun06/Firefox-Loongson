@@ -1,5 +1,5 @@
 /*
- * Copyright 2013, Mozilla Foundation and contributors
+ * Copyright 2015, Mozilla Foundation and contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,7 +36,9 @@ AudioDecoder::AudioDecoder(GMPAudioHost *aHostAPI)
 
 AudioDecoder::~AudioDecoder()
 {
-  mMutex->Destroy();
+  if (mMutex) {
+    mMutex->Destroy();
+  }
 }
 
 void
@@ -223,8 +225,12 @@ AudioDecoder::MFToGMPSample(IMFSample* aInput,
 void
 AudioDecoder::Reset()
 {
-  mDecoder->Reset();
-  mCallback->ResetComplete();
+  if (mDecoder) {
+    mDecoder->Reset();
+  }
+  if (mCallback) {
+    mCallback->ResetComplete();
+  }
 }
 
 void
@@ -248,6 +254,9 @@ AudioDecoder::DrainTask()
 void
 AudioDecoder::Drain()
 {
+  if (!mDecoder) {
+    return;
+  }
   EnsureWorker();
   mWorkerThread->Post(WrapTask(this,
                                &AudioDecoder::DrainTask));

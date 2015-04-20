@@ -35,6 +35,7 @@
 #include "mozilla/dom/nsIContentParent.h"
 #include "mozilla/dom/PermissionMessageUtils.h"
 #include "mozilla/dom/ProcessGlobal.h"
+#include "mozilla/dom/SameProcessMessageQueue.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/StructuredCloneUtils.h"
 #include "mozilla/dom/ipc/BlobChild.h"
@@ -1490,11 +1491,12 @@ NS_NewGlobalMessageManager(nsIMessageBroadcaster** aResult)
 {
   NS_ENSURE_TRUE(XRE_GetProcessType() == GeckoProcessType_Default,
                  NS_ERROR_NOT_AVAILABLE);
-  nsFrameMessageManager* mm = new nsFrameMessageManager(nullptr,
-                                                        nullptr,
-                                                        MM_CHROME | MM_GLOBAL | MM_BROADCASTER);
+  nsRefPtr<nsFrameMessageManager> mm = new nsFrameMessageManager(nullptr,
+                                                                 nullptr,
+                                                                 MM_CHROME | MM_GLOBAL | MM_BROADCASTER);
   RegisterStrongMemoryReporter(new MessageManagerReporter());
-  return CallQueryInterface(mm, aResult);
+  mm.forget(aResult);
+  return NS_OK;
 }
 
 nsDataHashtable<nsStringHashKey, nsMessageManagerScriptHolder*>*
@@ -1658,8 +1660,7 @@ nsMessageManagerScriptExecutor::TryCacheLoadAndCompileScript(
       }
     } else {
       // We're going to run these against some non-global scope.
-      options.setCompileAndGo(false)
-             .setHasPollutedScope(true);
+      options.setHasPollutedScope(true);
       if (!JS::Compile(cx, options, srcBuf, &script)) {
         return;
       }
@@ -1749,7 +1750,6 @@ NS_IMPL_ISUPPORTS(nsScriptCacheCleaner, nsIObserver)
 nsFrameMessageManager* nsFrameMessageManager::sChildProcessManager = nullptr;
 nsFrameMessageManager* nsFrameMessageManager::sParentProcessManager = nullptr;
 nsFrameMessageManager* nsFrameMessageManager::sSameProcessParentManager = nullptr;
-nsTArray<nsCOMPtr<nsIRunnable> >* nsFrameMessageManager::sPendingSameProcessAsyncMessages = nullptr;
 
 class nsAsyncMessageToSameProcessChild : public nsSameProcessAsyncMessageBase,
                                          public nsRunnable
@@ -1907,7 +1907,7 @@ public:
 
 
 class nsAsyncMessageToSameProcessParent : public nsSameProcessAsyncMessageBase,
-                                          public nsRunnable
+                                          public SameProcessMessageQueue::Runnable
 {
 public:
   nsAsyncMessageToSameProcessParent(JSContext* aCx,
@@ -1916,25 +1916,15 @@ public:
                                     JS::Handle<JSObject *> aCpows,
                                     nsIPrincipal* aPrincipal)
     : nsSameProcessAsyncMessageBase(aCx, aMessage, aData, aCpows, aPrincipal)
-    , mDelivered(false)
   {
   }
 
-  NS_IMETHOD Run()
+  virtual nsresult HandleMessage() override
   {
-    if (nsFrameMessageManager::sPendingSameProcessAsyncMessages) {
-      nsFrameMessageManager::sPendingSameProcessAsyncMessages->RemoveElement(this);
-    }
-    if (!mDelivered) {
-      mDelivered = true;
-      nsFrameMessageManager* ppm = nsFrameMessageManager::sSameProcessParentManager;
-      ReceiveMessage(static_cast<nsIContentFrameMessageManager*>(ppm), ppm);
-    }
+    nsFrameMessageManager* ppm = nsFrameMessageManager::sSameProcessParentManager;
+    ReceiveMessage(static_cast<nsIContentFrameMessageManager*>(ppm), ppm);
     return NS_OK;
   }
-
-private:
-  bool mDelivered;
 };
 
 /**
@@ -1960,15 +1950,9 @@ public:
                                      InfallibleTArray<nsString>* aJSONRetVal,
                                      bool aIsSync) override
   {
-    nsTArray<nsCOMPtr<nsIRunnable> > asyncMessages;
-    if (nsFrameMessageManager::sPendingSameProcessAsyncMessages) {
-      asyncMessages.SwapElements(*nsFrameMessageManager::sPendingSameProcessAsyncMessages);
-      uint32_t len = asyncMessages.Length();
-      for (uint32_t i = 0; i < len; ++i) {
-        nsCOMPtr<nsIRunnable> async = asyncMessages[i];
-        async->Run();
-      }
-    }
+    SameProcessMessageQueue* queue = SameProcessMessageQueue::Get();
+    queue->Flush();
+
     if (nsFrameMessageManager::sSameProcessParentManager) {
       SameProcessCpowHolder cpows(js::GetRuntime(aCx), aCpows);
       nsRefPtr<nsFrameMessageManager> ppm = nsFrameMessageManager::sSameProcessParentManager;
@@ -1984,13 +1968,10 @@ public:
                                   JS::Handle<JSObject *> aCpows,
                                   nsIPrincipal* aPrincipal) override
   {
-    if (!nsFrameMessageManager::sPendingSameProcessAsyncMessages) {
-      nsFrameMessageManager::sPendingSameProcessAsyncMessages = new nsTArray<nsCOMPtr<nsIRunnable> >;
-    }
-    nsCOMPtr<nsIRunnable> ev =
+    SameProcessMessageQueue* queue = SameProcessMessageQueue::Get();
+    nsRefPtr<nsAsyncMessageToSameProcessParent> ev =
       new nsAsyncMessageToSameProcessParent(aCx, aMessage, aData, aCpows, aPrincipal);
-    nsFrameMessageManager::sPendingSameProcessAsyncMessages->AppendElement(ev);
-    NS_DispatchToCurrentThread(ev);
+    queue->Push(ev);
     return true;
   }
 
@@ -2008,7 +1989,8 @@ NS_NewParentProcessMessageManager(nsIMessageBroadcaster** aResult)
                                                                  MM_CHROME | MM_PROCESSMANAGER | MM_BROADCASTER);
   nsFrameMessageManager::sParentProcessManager = mm;
   nsFrameMessageManager::NewProcessMessageManager(false); // Create same process message manager.
-  return CallQueryInterface(mm, aResult);
+  mm.forget(aResult);
+  return NS_OK;
 }
 
 
@@ -2055,9 +2037,10 @@ NS_NewChildProcessMessageManager(nsISyncMessageSender** aResult)
                                                         nullptr,
                                                         MM_PROCESSMANAGER | MM_OWNSCALLBACK);
   nsFrameMessageManager::SetChildProcessManager(mm);
-  ProcessGlobal* global = new ProcessGlobal(mm);
+  nsRefPtr<ProcessGlobal> global = new ProcessGlobal(mm);
   NS_ENSURE_TRUE(global->Init(), NS_ERROR_UNEXPECTED);
-  return CallQueryInterface(global, aResult);
+  global.forget(aResult);
+  return NS_OK;
 
 }
 

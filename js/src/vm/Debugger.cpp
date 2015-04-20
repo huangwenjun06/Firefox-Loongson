@@ -521,7 +521,7 @@ Debugger::hasAnyLiveHooks() const
 
     /* If any breakpoints are in live scripts, return true. */
     for (Breakpoint* bp = firstBreakpoint(); bp; bp = bp->nextInDebugger()) {
-        if (IsScriptMarked(&bp->site->script))
+        if (IsMarkedUnbarriered(&bp->site->script))
             return true;
     }
 
@@ -606,6 +606,13 @@ Debugger::slowPathOnLeaveFrame(JSContext* cx, AbstractFramePtr frame, bool frame
 {
     Handle<GlobalObject*> global = cx->global();
 
+    // The onPop handler and associated clean up logic should not run multiple
+    // times on the same frame. If slowPathOnLeaveFrame has already been
+    // called, the frame will not be present in the Debugger frame maps.
+    FrameRange frameRange(frame, global);
+    if (frameRange.empty())
+        return frameOk;
+
     /* Save the frame's completion value. */
     JSTrapStatus status;
     RootedValue value(cx);
@@ -618,8 +625,8 @@ Debugger::slowPathOnLeaveFrame(JSContext* cx, AbstractFramePtr frame, bool frame
     if (!cx->isThrowingOverRecursed() && !cx->isThrowingOutOfMemory()) {
         /* Build a list of the recipients. */
         AutoObjectVector frames(cx);
-        for (FrameRange r(frame, global); !r.empty(); r.popFront()) {
-            if (!frames.append(r.frontFrame())) {
+        for (; !frameRange.empty(); frameRange.popFront()) {
+            if (!frames.append(frameRange.frontFrame())) {
                 cx->clearPendingException();
                 return false;
             }
@@ -2031,7 +2038,7 @@ UpdateExecutionObservabilityOfScriptsInZone(JSContext* cx, Zone* zone,
             for (gc::ZoneCellIter iter(zone, gc::AllocKind::SCRIPT); !iter.done(); iter.next()) {
                 JSScript* script = iter.get<JSScript>();
                 if (obs.shouldRecompileOrInvalidate(script) &&
-                    !gc::IsScriptAboutToBeFinalized(&script))
+                    !gc::IsAboutToBeFinalizedUnbarriered(&script))
                 {
                     if (!AppendAndInvalidateScript(cx, zone, script, scripts))
                         return false;
@@ -2265,7 +2272,7 @@ Debugger::markAllIteratively(GCMarker* trc)
     for (CompartmentsIter c(rt, SkipAtoms); !c.done(); c.next()) {
         if (c->isDebuggee()) {
             GlobalObject* global = c->maybeGlobal();
-            if (!IsObjectMarked(&global))
+            if (!IsMarkedUnbarriered(&global))
                 continue;
 
             /*
@@ -2287,13 +2294,13 @@ Debugger::markAllIteratively(GCMarker* trc)
                 if (!dbgobj->zone()->isGCMarking())
                     continue;
 
-                bool dbgMarked = IsObjectMarked(&dbgobj);
+                bool dbgMarked = IsMarked(&dbgobj);
                 if (!dbgMarked && dbg->hasAnyLiveHooks()) {
                     /*
                      * obj could be reachable only via its live, enabled
                      * debugger hooks, which may yet be called.
                      */
-                    MarkObject(trc, &dbgobj, "enabled Debugger");
+                    TraceEdge(trc, &dbgobj, "enabled Debugger");
                     markedAny = true;
                     dbgMarked = true;
                 }
@@ -2301,13 +2308,13 @@ Debugger::markAllIteratively(GCMarker* trc)
                 if (dbgMarked) {
                     /* Search for breakpoints to mark. */
                     for (Breakpoint* bp = dbg->firstBreakpoint(); bp; bp = bp->nextInDebugger()) {
-                        if (IsScriptMarked(&bp->site->script)) {
+                        if (IsMarkedUnbarriered(&bp->site->script)) {
                             /*
                              * The debugger and the script are both live.
                              * Therefore the breakpoint handler is live.
                              */
-                            if (!IsObjectMarked(&bp->getHandlerRef())) {
-                                MarkObject(trc, &bp->getHandlerRef(), "breakpoint handler");
+                            if (!IsMarked(&bp->getHandlerRef())) {
+                                TraceEdge(trc, &bp->getHandlerRef(), "breakpoint handler");
                                 markedAny = true;
                             }
                         }
@@ -2332,13 +2339,13 @@ Debugger::markAll(JSTracer* trc)
         WeakGlobalObjectSet& debuggees = dbg->debuggees;
         for (WeakGlobalObjectSet::Enum e(debuggees); !e.empty(); e.popFront()) {
             GlobalObject* global = e.front();
-            MarkObjectUnbarriered(trc, &global, "Global Object");
+            TraceManuallyBarrieredEdge(trc, &global, "Global Object");
             if (global != e.front())
                 e.rekeyFront(ReadBarrieredGlobalObject(global));
         }
 
         HeapPtrNativeObject& dbgobj = dbg->toJSObjectRef();
-        MarkObject(trc, &dbgobj, "Debugger Object");
+        TraceEdge(trc, &dbgobj, "Debugger Object");
 
         dbg->scripts.trace(trc);
         dbg->sources.trace(trc);
@@ -2346,8 +2353,8 @@ Debugger::markAll(JSTracer* trc)
         dbg->environments.trace(trc);
 
         for (Breakpoint* bp = dbg->firstBreakpoint(); bp; bp = bp->nextInDebugger()) {
-            MarkScriptUnbarriered(trc, &bp->site->script, "breakpoint script");
-            MarkObject(trc, &bp->getHandlerRef(), "breakpoint handler");
+            TraceManuallyBarrieredEdge(trc, &bp->site->script, "breakpoint script");
+            TraceEdge(trc, &bp->getHandlerRef(), "breakpoint handler");
         }
     }
 }
@@ -2363,7 +2370,7 @@ void
 Debugger::trace(JSTracer* trc)
 {
     if (uncaughtExceptionHook)
-        MarkObject(trc, &uncaughtExceptionHook, "hooks");
+        TraceEdge(trc, &uncaughtExceptionHook, "hooks");
 
     /*
      * Mark Debugger.Frame objects. These are all reachable from JS, because the
@@ -2376,7 +2383,7 @@ Debugger::trace(JSTracer* trc)
     for (FrameMap::Range r = frames.all(); !r.empty(); r.popFront()) {
         RelocatablePtrNativeObject& frameobj = r.front().value();
         MOZ_ASSERT(MaybeForwarded(frameobj.get())->getPrivate());
-        MarkObject(trc, &frameobj, "live Debugger.Frame");
+        TraceEdge(trc, &frameobj, "live Debugger.Frame");
     }
 
     /*
@@ -2384,7 +2391,7 @@ Debugger::trace(JSTracer* trc)
      */
     for (AllocationSite* s = allocationsLog.getFirst(); s; s = s->getNext()) {
         if (s->frame)
-            MarkObject(trc, &s->frame, "allocation log SavedFrame");
+            TraceEdge(trc, &s->frame, "allocation log SavedFrame");
     }
 
     /* Trace the weak map from JSScript instances to Debugger.Script objects. */
@@ -2406,7 +2413,7 @@ Debugger::sweepAll(FreeOp* fop)
     JSRuntime* rt = fop->runtime();
 
     for (Debugger* dbg = rt->debuggerList.getFirst(); dbg; dbg = dbg->getNext()) {
-        if (IsObjectAboutToBeFinalized(&dbg->object)) {
+        if (IsAboutToBeFinalized(&dbg->object)) {
             /*
              * dbg is being GC'd. Detach it from its debuggees. The debuggee
              * might be GC'd too. Since detaching requires access to both
@@ -4164,7 +4171,9 @@ Debugger::drainTraceLoggerScriptCalls(JSContext* cx, unsigned argc, Value* vp)
             return false;
 
         if (textId != TraceLogger_Stop) {
-            const char* filename, *lineno, *colno;
+            const char* filename;
+            const char* lineno;
+            const char* colno;
             size_t filename_len, lineno_len, colno_len;
             logger->extractScriptDetails(textId, &filename, &filename_len, &lineno, &lineno_len,
                                          &colno, &colno_len);
@@ -4996,13 +5005,11 @@ Debugger::replaceFrameGuts(JSContext* cx, AbstractFramePtr from, AbstractFramePt
     return true;
 }
 
-/* static */ void
-Debugger::assertNotInFrameMaps(AbstractFramePtr frame)
+/* static */ bool
+Debugger::inFrameMaps(AbstractFramePtr frame)
 {
-#ifdef DEBUG
     FrameRange r(frame);
-    MOZ_ASSERT(r.empty());
-#endif
+    return !r.empty();
 }
 
 /* static */ void
@@ -6146,8 +6153,8 @@ EvaluateInEnv(JSContext* cx, Handle<Env*> env, HandleValue thisv, AbstractFrameP
     if (!staticScope)
         return false;
     CompileOptions options(cx);
-    options.setCompileAndGo(true)
-           .setHasPollutedScope(true)
+    options.setHasPollutedScope(true)
+           .setIsRunOnce(true)
            .setForEval(true)
            .setNoScriptRval(false)
            .setFileAndLine(filename, lineno)

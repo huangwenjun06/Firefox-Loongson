@@ -508,7 +508,7 @@ public:
     return rv;
   }
 
-  nsresult SspReplyCmd(const nsAString& aBdAddr, const nsAString& aVariant,
+  nsresult SspReplyCmd(const nsAString& aBdAddr, BluetoothSspVariant aVariant,
                        bool aAccept, uint32_t aPasskey,
                        BluetoothResultHandler* aRes)
   {
@@ -518,8 +518,7 @@ public:
 
     nsresult rv = PackPDU(
       PackConversion<nsAString, BluetoothAddress>(aBdAddr),
-      PackConversion<nsAString, BluetoothSspVariant>(aVariant),
-      aAccept, aPasskey, *pdu);
+      aVariant, aAccept, aPasskey, *pdu);
     if (NS_FAILED(rv)) {
       return rv;
     }
@@ -1874,7 +1873,8 @@ BluetoothDaemonInterface::OnConnectError(enum Channel aChannel)
       // Stop daemon and close listen socket
       unused << NS_WARN_IF(property_set("ctl.stop", "bluetoothd"));
       mListenSocket->Close();
-    case LISTEN_SOCKET: {
+    case LISTEN_SOCKET:
+      if (!mResultHandlerQ.IsEmpty()) {
         // Signal error to caller
         nsRefPtr<BluetoothResultHandler> res = mResultHandlerQ.ElementAt(0);
         mResultHandlerQ.RemoveElementAt(0);
@@ -2406,7 +2406,7 @@ BluetoothDaemonInterface::PinReply(const nsAString& aBdAddr, bool aAccept,
 
 void
 BluetoothDaemonInterface::SspReply(const nsAString& aBdAddr,
-                                   const nsAString& aVariant,
+                                   BluetoothSspVariant aVariant,
                                    bool aAccept, uint32_t aPasskey,
                                    BluetoothResultHandler* aRes)
 {
@@ -2535,6 +2535,12 @@ BluetoothDaemonInterface::GetBluetoothAvrcpInterface()
   mAvrcpInterface = new BluetoothDaemonAvrcpInterface(mProtocol);
 
   return mAvrcpInterface;
+}
+
+BluetoothGattInterface*
+BluetoothDaemonInterface::GetBluetoothGattInterface()
+{
+  return nullptr;
 }
 
 END_BLUETOOTH_NAMESPACE

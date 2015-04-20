@@ -8,24 +8,28 @@
 const { Cc, Ci, Cu } = require("chrome");
 
 const Environment = require("sdk/system/environment").env;
+const EventEmitter = require("devtools/toolkit/event-emitter");
+const promise = require("promise");
 const Subprocess = require("sdk/system/child_process/subprocess");
-const { EventEmitter } = Cu.import("resource://gre/modules/devtools/event-emitter.js", {});
-const { Promise: promise } = Cu.import("resource://gre/modules/Promise.jsm", {});
 const { Services } = Cu.import("resource://gre/modules/Services.jsm", {});
 
-let platform = Services.appShell.hiddenDOMWindow.navigator.platform;
-let OS = "";
-if (platform.indexOf("Win") != -1) {
-  OS = "win32";
-} else if (platform.indexOf("Mac") != -1) {
-  OS = "mac64";
-} else if (platform.indexOf("Linux") != -1) {
-  if (platform.indexOf("x86_64") != -1) {
-    OS = "linux64";
-  } else {
-    OS = "linux32";
+loader.lazyGetter(this, "OS", () => {
+  const Runtime = require("sdk/system/runtime");
+  switch (Runtime.OS) {
+    case "Darwin":
+      return "mac64";
+    case "Linux":
+      if (Runtime.XPCOMABI.indexOf("x86_64") === 0) {
+        return "linux64";
+      } else {
+        return "linux32";
+      }
+    case "WINNT":
+      return "win32";
+    default:
+      return "";
   }
-}
+});
 
 function SimulatorProcess() {}
 SimulatorProcess.prototype = {
@@ -40,6 +44,12 @@ SimulatorProcess.prototype = {
     let b2g = this.b2gBinary;
     if (!b2g || !b2g.exists()) {
       throw Error("B2G executable not found.");
+    }
+
+    // Ensure Gaia profile exists.
+    let gaia = this.gaiaProfile;
+    if (!gaia || !gaia.exists()) {
+      throw Error("Gaia profile directory not found.");
     }
 
     this.once("stdout", function () {
@@ -118,13 +128,19 @@ SimulatorProcess.prototype = {
   get args() {
     let args = [];
 
-    let gaia = this.gaiaProfile;
-    if (!gaia || !gaia.exists()) {
-      throw Error("Gaia profile directory not found.");
-    }
-    args.push("-profile", gaia.path);
+    // Gaia profile.
+    args.push("-profile", this.gaiaProfile.path);
 
-    args.push("-start-debugger-server", "" + this.options.port);
+    // Debugger server port.
+    let port = parseInt(this.options.port);
+    args.push("-start-debugger-server", "" + port);
+
+    // Screen size.
+    let width = parseInt(this.options.width);
+    let height = parseInt(this.options.height);
+    if (width && height) {
+      args.push("-screen", width + "x" + height);
+    }
 
     // Ignore eventual zombie instances of b2g that are left over.
     args.push("-no-remote");
@@ -198,15 +214,24 @@ Object.defineProperty(ASPp, "b2gBinary", {
 Object.defineProperty(ASPp, "gaiaProfile", {
   get: function() {
     let file;
+
+    // Custom profile from simulator configuration.
+    if (this.options.gaiaProfile) {
+      file = Cc['@mozilla.org/file/local;1'].createInstance(Ci.nsILocalFile);
+      file.initWithPath(this.options.gaiaProfile);
+      return file;
+    }
+
+    // Custom profile from addon prefs.
     try {
       let pref = "extensions." + this.addon.id + ".gaiaProfile";
       file = Services.prefs.getComplexValue(pref, Ci.nsIFile);
+      return file;
     } catch(e) {}
 
-    if (!file) {
-      file = this.addon.getResourceURI().QueryInterface(Ci.nsIFileURL).file;
-      file.append("profile");
-    }
+    // Default profile from addon.
+    file = this.addon.getResourceURI().QueryInterface(Ci.nsIFileURL).file;
+    file.append("profile");
     return file;
   }
 });
@@ -254,13 +279,12 @@ Object.defineProperty(OASPp, "args", {
   get: function() {
     let args = [];
 
-    let gaia = this.gaiaProfile;
-    if (!gaia || !gaia.exists()) {
-      throw Error("Gaia profile directory not found.");
-    }
-    args.push("-profile", gaia.path);
+    // Gaia profile.
+    args.push("-profile", this.gaiaProfile.path);
 
-    args.push("-dbgport", "" + this.options.port);
+    // Debugger server port.
+    let port = parseInt(this.options.port);
+    args.push("-dbgport", "" + port);
 
     // Ignore eventual zombie instances of b2g that are left over.
     args.push("-no-remote");

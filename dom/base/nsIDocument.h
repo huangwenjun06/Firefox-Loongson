@@ -29,7 +29,6 @@
 #include "nsExpirationTracker.h"
 #include "nsClassHashtable.h"
 #include "prclist.h"
-#include "gfxVR.h"
 
 class imgIRequest;
 class nsAString;
@@ -97,8 +96,11 @@ class Loader;
 class ImageLoader;
 } // namespace css
 
+namespace gfx {
+class VRHMDInfo;
+} // namespace gfx
+
 namespace dom {
-class AnimationTimeline;
 class AnonymousContent;
 class Attr;
 class BoxObject;
@@ -106,6 +108,7 @@ class CDATASection;
 class Comment;
 struct CustomElementDefinition;
 class DocumentFragment;
+class DocumentTimeline;
 class DocumentType;
 class DOMImplementation;
 class DOMStringList;
@@ -142,7 +145,7 @@ template<typename, typename> class CallbackObjectHolder;
 typedef CallbackObjectHolder<NodeFilter, nsIDOMNodeFilter> NodeFilterHolder;
 
 struct FullScreenOptions {
-  FullScreenOptions() { }
+  FullScreenOptions();
   nsRefPtr<gfx::VRHMDInfo> mVRHMDDevice;
 };
 
@@ -2084,7 +2087,7 @@ public:
 
   virtual already_AddRefed<mozilla::dom::UndoManager> GetUndoManager() = 0;
 
-  virtual mozilla::dom::AnimationTimeline* Timeline() = 0;
+  virtual mozilla::dom::DocumentTimeline* Timeline() = 0;
 
   typedef mozilla::dom::CallbackObjectHolder<
     mozilla::dom::FrameRequestCallback,

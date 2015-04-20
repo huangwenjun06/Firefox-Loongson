@@ -10,6 +10,7 @@ const errors = [
   "ElementNotVisibleError",
   "FrameSendFailureError",
   "FrameSendNotInitializedError",
+  "IllegalArgumentError",
   "InvalidElementStateError",
   "JavaScriptError",
   "NoAlertOpenError",
@@ -124,6 +125,7 @@ this.WebDriverError = function(msg) {
   Error.call(this, msg);
   this.name = "WebDriverError";
   this.message = msg;
+  this.status = "webdriver error";
   this.code = 500;  // overridden
 };
 WebDriverError.prototype = Object.create(Error.prototype);
@@ -157,6 +159,14 @@ this.FrameSendNotInitializedError = function(frame) {
   this.errMsg = `${this.message} ${this.frame}; frame has closed.`;
 };
 FrameSendNotInitializedError.prototype = Object.create(WebDriverError.prototype);
+
+this.IllegalArgumentError = function(msg) {
+  WebDriverError.call(this, msg);
+  this.name = "IllegalArgumentError";
+  this.status = "illegal argument";
+  this.code = 13;  // unknown error
+};
+IllegalArgumentError.prototype = Object.create(WebDriverError.prototype);
 
 this.InvalidElementStateError = function(msg) {
   WebDriverError.call(this, msg);
@@ -299,6 +309,7 @@ const errorObjs = [
   this.ElementNotVisibleError,
   this.FrameSendFailureError,
   this.FrameSendNotInitializedError,
+  this.IllegalArgumentError,
   this.InvalidElementStateError,
   this.JavaScriptError,
   this.NoAlertOpenError,

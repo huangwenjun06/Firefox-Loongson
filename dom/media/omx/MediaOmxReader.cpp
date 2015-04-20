@@ -190,9 +190,7 @@ MediaOmxReader::Shutdown()
 
   // Wait for the superclass to finish tearing things down before releasing
   // the decoder on the main thread.
-  nsCOMPtr<nsIThread> mt;
-  NS_GetMainThread(getter_AddRefs(mt));
-  p->Then(mt.get(), __func__, this, &MediaOmxReader::ReleaseDecoder, &MediaOmxReader::ReleaseDecoder);
+  p->Then(AbstractThread::MainThread(), __func__, this, &MediaOmxReader::ReleaseDecoder, &MediaOmxReader::ReleaseDecoder);
 
   return p;
 }
@@ -326,7 +324,7 @@ nsresult MediaOmxReader::ReadMetadata(MediaInfo* aInfo,
     }
 
     // Video track's frame sizes will not overflow. Activate the video track.
-    mHasVideo = mInfo.mVideo.mHasVideo = true;
+    mHasVideo = true;
     mInfo.mVideo.mDisplay = displaySize;
     mPicture = pictureRect;
     mInitialFrame = frameSize;
@@ -341,7 +339,7 @@ nsresult MediaOmxReader::ReadMetadata(MediaInfo* aInfo,
   if (mOmxDecoder->HasAudio()) {
     int32_t numChannels, sampleRate;
     mOmxDecoder->GetAudioParameters(&numChannels, &sampleRate);
-    mHasAudio = mInfo.mAudio.mHasAudio = true;
+    mHasAudio = true;
     mInfo.mAudio.mChannels = numChannels;
     mInfo.mAudio.mRate = sampleRate;
   }

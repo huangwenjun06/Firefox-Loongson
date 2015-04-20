@@ -661,32 +661,19 @@ ClonedBlockObject::copyUnaliasedValues(AbstractFramePtr frame)
 }
 
 /* static */ ClonedBlockObject*
-ClonedBlockObject::clone(ExclusiveContext* cx, Handle<ClonedBlockObject*> block)
+ClonedBlockObject::clone(JSContext* cx, Handle<ClonedBlockObject*> clonedBlock)
 {
-    RootedObject enclosing(cx, &block->enclosingScope());
+    Rooted<StaticBlockObject*> staticBlock(cx, &clonedBlock->staticBlock());
+    RootedObject enclosing(cx, &clonedBlock->enclosingScope());
 
-    MOZ_ASSERT(block->getClass() == &BlockObject::class_);
-
-    RootedObjectGroup cloneGroup(cx, block->group());
-    RootedShape cloneShape(cx, block->lastProperty());
-
-    JSObject* obj = JSObject::create(cx, FINALIZE_KIND, gc::TenuredHeap, cloneShape, cloneGroup);
-    if (!obj)
+    Rooted<ClonedBlockObject*> copy(cx, create(cx, staticBlock, enclosing));
+    if (!copy)
         return nullptr;
 
-    ClonedBlockObject& copy = obj->as<ClonedBlockObject>();
+    for (uint32_t i = 0, count = staticBlock->numVariables(); i < count; i++)
+        copy->setVar(i, clonedBlock->var(i, DONT_CHECK_ALIASING), DONT_CHECK_ALIASING);
 
-    MOZ_ASSERT(!copy.inDictionaryMode());
-    MOZ_ASSERT(copy.isDelegate());
-    MOZ_ASSERT(block->slotSpan() == copy.slotSpan());
-    MOZ_ASSERT(copy.slotSpan() >= copy.numVariables() + RESERVED_SLOTS);
-
-    copy.setReservedSlot(SCOPE_CHAIN_SLOT, block->getReservedSlot(SCOPE_CHAIN_SLOT));
-
-    for (uint32_t i = 0, count = copy.numVariables(); i < count; i++)
-        copy.setVar(i, block->var(i, DONT_CHECK_ALIASING), DONT_CHECK_ALIASING);
-
-    return &copy;
+    return copy;
 }
 
 StaticBlockObject*
@@ -1185,7 +1172,7 @@ void
 LiveScopeVal::sweep()
 {
     if (staticScope_)
-        MOZ_ALWAYS_FALSE(IsObjectAboutToBeFinalized(staticScope_.unsafeGet()));
+        MOZ_ALWAYS_FALSE(IsAboutToBeFinalized(&staticScope_));
 }
 
 // Live ScopeIter values may be added to DebugScopes::liveScopes, as
@@ -1364,10 +1351,18 @@ class DebugScopeProxy : public BaseProxyHandler
                 else
                     frame.unaliasedLocal(local) = vp;
             } else {
-                if (action == GET)
+                if (action == GET) {
+                    // A ClonedBlockObject whose static block does not need
+                    // cloning is a "hollow" block object reflected for
+                    // missing block scopes. Their slot values are lost.
+                    if (!block->staticBlock().needsClone()) {
+                        *accessResult = ACCESS_LOST;
+                        return true;
+                    }
                     vp.set(block->var(i, DONT_CHECK_ALIASING));
-                else
+                } else {
                     block->setVar(i, vp, DONT_CHECK_ALIASING);
+                }
             }
 
             *accessResult = ACCESS_UNALIASED;
@@ -1884,7 +1879,7 @@ DebugScopes::sweep(JSRuntime* rt)
      */
     for (MissingScopeMap::Enum e(missingScopes); !e.empty(); e.popFront()) {
         DebugScopeObject** debugScope = e.front().value().unsafeGet();
-        if (IsObjectAboutToBeFinalized(debugScope)) {
+        if (IsAboutToBeFinalizedUnbarriered(debugScope)) {
             /*
              * Note that onPopCall and onPopBlock rely on missingScopes to find
              * scope objects that we synthesized for the debugger's sake, and
@@ -1922,7 +1917,7 @@ DebugScopes::sweep(JSRuntime* rt)
          * Scopes can be finalized when a debugger-synthesized ScopeObject is
          * no longer reachable via its DebugScopeObject.
          */
-        if (IsObjectAboutToBeFinalized(&scope))
+        if (IsAboutToBeFinalizedUnbarriered(&scope))
             e.removeFront();
         else if (scope != e.front().key())
             e.rekeyFront(scope);
@@ -2495,6 +2490,7 @@ js::GetDebugScopeForFrame(JSContext* cx, AbstractFramePtr frame, jsbytecode* pc)
     assertSameCompartment(cx, frame);
     if (CanUseDebugScopeMaps(cx) && !DebugScopes::updateLiveScopes(cx))
         return nullptr;
+
     ScopeIter si(cx, frame, pc);
     return GetDebugScope(cx, si);
 }

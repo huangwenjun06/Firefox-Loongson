@@ -143,6 +143,9 @@ var ignoreFunctions = {
     // generic to ignore by itself.
     "void* std::_Locale_impl::~_Locale_impl(int32)" : true,
 
+    // Bug 1056410 - devirtualization prevents the standard nsISupports::Release heuristic from working
+    "uint32 nsXPConnect::Release()" : true,
+
     // FIXME!
     "NS_LogInit": true,
     "NS_LogTerm": true,
@@ -280,4 +283,49 @@ function isOverridableField(initialCSU, csu, field)
     }
 
     return true;
+}
+
+function listGCTypes() {
+    return [
+        'JSObject',
+        'JSString',
+        'js::Shape',
+        'js::BaseShape',
+        'JSScript',
+        'js::LazyScript',
+        'js::ion::IonCode',
+    ];
+}
+
+function listGCPointers() {
+    return [
+        'JS::Value',
+        'jsid',
+
+        // AutoCheckCannotGC should also not be held live across a GC function.
+        'JS::AutoCheckCannotGC',
+    ];
+}
+
+function listNonGCTypes() {
+    return [
+    ];
+}
+
+function listNonGCPointers() {
+    return [
+        // Both of these are safe only because jsids are currently only made
+        // from "interned" (pinned) strings. Once that changes, both should be
+        // removed from the list.
+        'NPIdentifier',
+        'XPCNativeMember',
+    ];
+}
+
+// Flexible mechanism for deciding an arbitrary type is a GCPointer. Its one
+// use turned out to be unnecessary due to another change, but the mechanism
+// seems useful for something like /Vector.*Something/.
+function isGCPointer(typeName)
+{
+    return false;
 }

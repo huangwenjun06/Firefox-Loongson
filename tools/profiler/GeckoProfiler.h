@@ -65,7 +65,7 @@ enum TracingMetadata {
   TRACING_EVENT_BACKTRACE
 };
 
-#ifndef MOZ_ENABLE_PROFILER_SPS
+#if !defined(MOZ_ENABLE_PROFILER_SPS) || defined(MOZILLA_XPCOMRT_API)
 
 #include <stdint.h>
 #include <stdarg.h>
@@ -225,30 +225,6 @@ public:
   ~GeckoProfilerSleepRAII() {
     profiler_sleep_end();
   }
-};
-
-class ProfilerBacktrace;
-
-class MOZ_STACK_CLASS GeckoProfilerTracingRAII {
-public:
-  GeckoProfilerTracingRAII(const char* aCategory, const char* aInfo,
-                           mozilla::UniquePtr<ProfilerBacktrace> aBacktrace
-                           MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-    : mCategory(aCategory)
-    , mInfo(aInfo)
-  {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-    profiler_tracing(mCategory, mInfo, aBacktrace.release(), TRACING_INTERVAL_START);
-  }
-
-  ~GeckoProfilerTracingRAII() {
-    profiler_tracing(mCategory, mInfo, TRACING_INTERVAL_END);
-  }
-
-protected:
-  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
-  const char* mCategory;
-  const char* mInfo;
 };
 
 #endif // ifndef SAMPLER_H

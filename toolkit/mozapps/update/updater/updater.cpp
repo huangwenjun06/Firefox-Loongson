@@ -116,6 +116,11 @@ static bool sUseHardLinks = true;
 # define MAYBE_USE_HARD_LINKS 0
 #endif
 
+#if defined(MOZ_VERIFY_MAR_SIGNATURE) && !defined(XP_WIN) && !defined(XP_MACOSX)
+#include "nss.h"
+#include "prerror.h"
+#endif
+
 #ifdef XP_WIN
 #include "updatehelper.h"
 
@@ -2057,7 +2062,6 @@ WaitForServiceFinishThread(void *param)
   // We wait at most 10 minutes, we already waited 5 seconds previously
   // before deciding to show this UI.
   WaitForServiceStop(SVC_NAME, 595);
-  LOG(("calling QuitProgressUI"));
   QuitProgressUI();
 }
 #endif
@@ -2190,7 +2194,12 @@ UpdateThreadFunc(void *param)
         NS_tchar updateSettingsPath[MAX_TEXT_LEN];
         NS_tsnprintf(updateSettingsPath,
                      sizeof(updateSettingsPath) / sizeof(updateSettingsPath[0]),
-                     NS_T("%s/update-settings.ini"), gWorkingDirPath);
+#ifdef XP_MACOSX
+                     NS_T("%s/Contents/Resources/update-settings.ini"),
+#else
+                     NS_T("%s/update-settings.ini"),
+#endif
+                     gWorkingDirPath);
         MARChannelStringTable MARStrings;
         if (ReadMARChannelIDs(updateSettingsPath, &MARStrings) != OK) {
           // If we can't read from update-settings.ini then we shouldn't impose
@@ -2280,6 +2289,20 @@ int NS_main(int argc, NS_tchar **argv)
     _exit(1);
   }
 #endif
+
+#if defined(MOZ_VERIFY_MAR_SIGNATURE) && !defined(XP_WIN) && !defined(XP_MACOSX)
+  // On Windows and Mac we rely on native APIs to do verifications so we don't
+  // need to initialize NSS at all there.
+  // Otherwise, minimize the amount of NSS we depend on by avoiding all the NSS
+  // databases.
+  if (NSS_NoDB_Init(NULL) != SECSuccess) {
+   PRErrorCode error = PR_GetError();
+   fprintf(stderr, "Could not initialize NSS: %s (%d)",
+           PR_ErrorToName(error), (int) error);
+    _exit(1);
+  }
+#endif
+
   InitProgressUI(&argc, &argv);
 
   // To process an update the updater command line must at a minimum have the

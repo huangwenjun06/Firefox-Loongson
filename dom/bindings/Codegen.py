@@ -1146,14 +1146,14 @@ class CGHeaders(CGWrapper):
         if len(callbacks) != 0:
             # We need CallbackFunction to serve as our parent class
             declareIncludes.add("mozilla/dom/CallbackFunction.h")
-            # And we need BindingUtils.h so we can wrap "this" objects
-            declareIncludes.add("mozilla/dom/BindingUtils.h")
+            # And we need ToJSValue.h so we can wrap "this" objects
+            declareIncludes.add("mozilla/dom/ToJSValue.h")
 
         if len(callbackDescriptors) != 0 or len(jsImplementedDescriptors) != 0:
             # We need CallbackInterface to serve as our parent class
             declareIncludes.add("mozilla/dom/CallbackInterface.h")
-            # And we need BindingUtils.h so we can wrap "this" objects
-            declareIncludes.add("mozilla/dom/BindingUtils.h")
+            # And we need ToJSValue.h so we can wrap "this" objects
+            declareIncludes.add("mozilla/dom/ToJSValue.h")
 
         # Also need to include the headers for ancestors of
         # JS-implemented interfaces.
@@ -6662,6 +6662,22 @@ class CGPerSignatureCall(CGThing):
                         return false;
                     }
                     """)))
+
+        if idlNode.getExtendedAttribute("Deprecated"):
+            cgThings.append(CGGeneric(dedent(
+                """
+                {
+                  GlobalObject global(cx, obj);
+                  if (global.Failed()) {
+                    return false;
+                  }
+                  nsCOMPtr<nsPIDOMWindow> pWindow = do_QueryInterface(global.GetAsSupports());
+                  if (pWindow && pWindow->GetExtantDoc()) {
+                    pWindow->GetExtantDoc()->WarnOnceAbout(nsIDocument::e%s);
+                  }
+                }
+                """ % idlNode.getExtendedAttribute("Deprecated")[0])))
+
         lenientFloatCode = None
         if idlNode.getExtendedAttribute('LenientFloat') is not None:
             if setter:
@@ -12405,6 +12421,12 @@ class CGBindingRoot(CGThing):
             iface = desc.interface
             return any(m.getExtendedAttribute("Pref") for m in iface.members + [iface])
 
+        def descriptorDeprecated(desc):
+            iface = desc.interface
+            return any(m.getExtendedAttribute("Deprecated") for m in iface.members + [iface])
+
+        bindingHeaders["nsIDocument.h"] = any(
+            descriptorDeprecated(d) for d in descriptors)
         bindingHeaders["mozilla/Preferences.h"] = any(
             descriptorRequiresPreferences(d) for d in descriptors)
         bindingHeaders["mozilla/dom/DOMJSProxyHandler.h"] = any(
@@ -13825,7 +13847,7 @@ class CGCallback(CGClass):
             """
             $*{setupCall}
             JS::Rooted<JS::Value> thisValJS(s.GetContext());
-            if (!WrapCallThisValue(s.GetContext(), thisVal, &thisValJS)) {
+            if (!ToJSValue(s.GetContext(), thisVal, &thisValJS)) {
               aRv.Throw(NS_ERROR_FAILURE);
               return${errorReturn};
             }

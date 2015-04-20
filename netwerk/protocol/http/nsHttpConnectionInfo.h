@@ -55,11 +55,18 @@ private:
         PR_LOG(gHttpLog, 4, ("Destroying nsHttpConnectionInfo @%x\n", this));
     }
 
+    void BuildHashKey();
+
 public:
     const nsAFlatCString &HashKey() const { return mHashKey; }
 
     const nsCString &GetAuthenticationHost() const { return mAuthenticationHost; }
     int32_t GetAuthenticationPort() const { return mAuthenticationPort; }
+
+    // With overhead rebuilding the hash key. The initial
+    // network interface is empty. So you can reduce one call
+    // if there's no explicit route after ctor.
+    void SetNetworkInterfaceId(const nsACString& aNetworkInterfaceId);
 
     // OK to treat these as an infalible allocation
     nsHttpConnectionInfo* Clone() const;
@@ -92,13 +99,15 @@ public:
     bool          GetAnonymous() const   { return mHashKey.CharAt(2) == 'A'; }
     void          SetPrivate(bool priv)  { mHashKey.SetCharAt(priv ? 'P' : '.', 3); }
     bool          GetPrivate() const     { return mHashKey.CharAt(3) == 'P'; }
-    void          SetRelaxed(bool relaxed)
-                                       { mHashKey.SetCharAt(relaxed ? 'R' : '.', 4); }
-    bool          GetRelaxed() const   { return mHashKey.CharAt(4) == 'R'; }
+    void          SetInsecureScheme(bool insecureScheme)
+                                       { mHashKey.SetCharAt(insecureScheme ? 'I' : '.', 4); }
+    bool          GetInsecureScheme() const   { return mHashKey.CharAt(4) == 'I'; }
 
     void          SetNoSpdy(bool aNoSpdy)
                                        { mHashKey.SetCharAt(aNoSpdy ? 'X' : '.', 5); }
     bool          GetNoSpdy() const    { return mHashKey.CharAt(5) == 'X'; }
+
+    const nsCString &GetNetworkInterfaceId() const { return mNetworkInterfaceId; }
 
     const nsCString &GetHost() { return mHost; }
     const nsCString &GetNPNToken() { return mNPNToken; }
@@ -136,6 +145,7 @@ private:
 
     nsCString              mHashKey;
     nsCString              mHost;
+    nsCString              mNetworkInterfaceId;
     int32_t                mPort;
     nsCString              mUsername;
     nsCString              mAuthenticationHost;

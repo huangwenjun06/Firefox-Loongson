@@ -29,6 +29,7 @@
 #include "mozilla/dom/ContentBridgeChild.h"
 #include "mozilla/dom/ContentBridgeParent.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/DataTransfer.h"
 #include "mozilla/dom/DOMStorageIPC.h"
 #include "mozilla/dom/ExternalHelperAppChild.h"
 #include "mozilla/dom/PCrashReporterChild.h"
@@ -49,13 +50,13 @@
 #include "mozilla/layers/PCompositorChild.h"
 #include "mozilla/layers/SharedBufferManagerChild.h"
 #include "mozilla/net/NeckoChild.h"
+#include "mozilla/plugins/PluginInstanceParent.h"
 #include "mozilla/plugins/PluginModuleParent.h"
 
 #if defined(MOZ_CONTENT_SANDBOX)
 #if defined(XP_WIN)
 #define TARGET_SANDBOX_EXPORTS
 #include "mozilla/sandboxTarget.h"
-#include "nsDirectoryServiceDefs.h"
 #elif defined(XP_LINUX)
 #include "mozilla/Sandbox.h"
 #include "mozilla/SandboxInfo.h"
@@ -69,6 +70,7 @@
 #include "mozInlineSpellChecker.h"
 #include "nsIConsoleListener.h"
 #include "nsICycleCollectorListener.h"
+#include "nsIDragService.h"
 #include "nsIIPCBackgroundChildCreateCallback.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIMemoryReporter.h"
@@ -96,6 +98,7 @@
 #include "nsISystemMessageCache.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsDirectoryServiceDefs.h"
+#include "nsContentPermissionHelper.h"
 
 #include "IHistory.h"
 #include "nsNetUtil.h"
@@ -177,7 +180,9 @@
 #include "mozilla/dom/time/DateCacheCleaner.h"
 #include "mozilla/dom/voicemail/VoicemailIPCService.h"
 #include "mozilla/net/NeckoMessageUtils.h"
+#include "mozilla/widget/PuppetBidiKeyboard.h"
 #include "mozilla/RemoteSpellCheckEngineChild.h"
+#include "GMPServiceChild.h"
 
 using namespace mozilla;
 using namespace mozilla::docshell;
@@ -191,11 +196,13 @@ using namespace mozilla::dom::mobilemessage;
 using namespace mozilla::dom::telephony;
 using namespace mozilla::dom::voicemail;
 using namespace mozilla::embedding;
+using namespace mozilla::gmp;
 using namespace mozilla::hal_sandbox;
 using namespace mozilla::ipc;
 using namespace mozilla::layers;
 using namespace mozilla::net;
 using namespace mozilla::jsipc;
+using namespace mozilla::widget;
 #if defined(MOZ_WIDGET_GONK)
 using namespace mozilla::system;
 #endif
@@ -789,12 +796,14 @@ ContentChild::InitXPCOM()
     if (NS_FAILED(svc->RegisterListener(mConsoleListener)))
         NS_WARNING("Couldn't register console listener for child process");
 
-    bool isOffline;
+    bool isOffline, isLangRTL;
     ClipboardCapabilities clipboardCaps;
     DomainPolicyClone domainPolicy;
 
-    SendGetXPCOMProcessAttributes(&isOffline, &mAvailableDictionaries, &clipboardCaps, &domainPolicy);
+    SendGetXPCOMProcessAttributes(&isOffline, &isLangRTL, &mAvailableDictionaries,
+                                  &clipboardCaps, &domainPolicy);
     RecvSetOffline(isOffline);
+    RecvBidiKeyboardNotify(isLangRTL);
 
     if (domainPolicy.active()) {
         nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
@@ -1036,6 +1045,13 @@ ContentChild::AllocPContentBridgeParent(mozilla::ipc::Transport* aTransport,
     return mLastBridge;
 }
 
+PGMPServiceChild*
+ContentChild::AllocPGMPServiceChild(mozilla::ipc::Transport* aTransport,
+                                    base::ProcessId aOtherProcess)
+{
+    return GMPServiceChild::Create(aTransport, aOtherProcess);
+}
+
 PCompositorChild*
 ContentChild::AllocPCompositorChild(mozilla::ipc::Transport* aTransport,
                                     base::ProcessId aOtherProcess)
@@ -1070,76 +1086,6 @@ ContentChild::AllocPProcessHangMonitorChild(Transport* aTransport,
 {
     return CreateHangMonitorChild(aTransport, aOtherProcess);
 }
-
-#if defined(XP_WIN) && defined(MOZ_CONTENT_SANDBOX)
-static void
-SetUpSandboxEnvironment()
-{
-    // Set up a low integrity temp directory. This only makes sense if the
-    // delayed integrity level for the content process is INTEGRITY_LEVEL_LOW.
-    nsresult rv;
-    nsCOMPtr<nsIProperties> directoryService =
-        do_GetService(NS_DIRECTORY_SERVICE_CONTRACTID, &rv);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-        return;
-    }
-
-    nsCOMPtr<nsIFile> lowIntegrityTemp;
-    rv = directoryService->Get(NS_WIN_LOW_INTEGRITY_TEMP, NS_GET_IID(nsIFile),
-                               getter_AddRefs(lowIntegrityTemp));
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-        return;
-    }
-
-    // Undefine returns a failure if the property is not already set.
-    unused << directoryService->Undefine(NS_OS_TEMP_DIR);
-    rv = directoryService->Set(NS_OS_TEMP_DIR, lowIntegrityTemp);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-        return;
-    }
-
-    // Set TEMP and TMP environment variables.
-    nsAutoString lowIntegrityTempPath;
-    rv = lowIntegrityTemp->GetPath(lowIntegrityTempPath);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-        return;
-    }
-
-    bool setOK = SetEnvironmentVariableW(L"TEMP", lowIntegrityTempPath.get());
-    NS_WARN_IF_FALSE(setOK, "Failed to set TEMP to low integrity temp path");
-    setOK = SetEnvironmentVariableW(L"TMP", lowIntegrityTempPath.get());
-    NS_WARN_IF_FALSE(setOK, "Failed to set TMP to low integrity temp path");
-}
-
-void
-ContentChild::CleanUpSandboxEnvironment()
-{
-    // Sandbox environment is only currently a low integrity temp, which only
-    // makes sense for sandbox pref level 1 (and will eventually not be needed
-    // at all, once all file access is via chrome/broker process).
-    if (Preferences::GetInt("security.sandbox.content.level") != 1) {
-        return;
-    }
-
-    nsresult rv;
-    nsCOMPtr<nsIProperties> directoryService =
-        do_GetService(NS_DIRECTORY_SERVICE_CONTRACTID, &rv);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-        return;
-    }
-
-    nsCOMPtr<nsIFile> lowIntegrityTemp;
-    rv = directoryService->Get(NS_WIN_LOW_INTEGRITY_TEMP, NS_GET_IID(nsIFile),
-                               getter_AddRefs(lowIntegrityTemp));
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-        return;
-    }
-
-    // Don't check the return value as the directory will only have been created
-    // if it has been used.
-    unused << lowIntegrityTemp->Remove(/* aRecursive */ true);
-}
-#endif
 
 #if defined(XP_MACOSX) && defined(MOZ_CONTENT_SANDBOX)
 
@@ -1226,13 +1172,14 @@ StartMacOSContentSandbox()
 
   MacSandboxInfo info;
   info.type = MacSandboxType_Content;
-  info.appPath.Assign(appPath);
-  info.appBinaryPath.Assign(appBinaryPath);
-  info.appDir.Assign(appDir);
+  info.level = Preferences::GetInt("security.sandbox.content.level");
+  info.appPath.assign(appPath.get());
+  info.appBinaryPath.assign(appBinaryPath.get());
+  info.appDir.assign(appDir.get());
 
-  nsAutoCString err;
+  std::string err;
   if (!mozilla::StartMacSandbox(info, err)) {
-    NS_WARNING(err.get());
+    NS_WARNING(err.c_str());
     MOZ_CRASH("sandbox_init() failed");
   }
 }
@@ -1258,12 +1205,6 @@ ContentChild::RecvSetProcessSandbox()
     SetContentProcessSandbox();
 #elif defined(XP_WIN)
     mozilla::SandboxTarget::Instance()->StartSandbox();
-    // Sandbox environment is only currently a low integrity temp, which only
-    // makes sense for sandbox pref level 1 (and will eventually not be needed
-    // at all, once all file access is via chrome/broker process).
-    if (Preferences::GetInt("security.sandbox.content.level") == 1) {
-        SetUpSandboxEnvironment();
-    }
 #elif defined(XP_MACOSX)
     StartMacOSContentSandbox();
 #endif
@@ -1284,6 +1225,18 @@ ContentChild::RecvSpeakerManagerNotify()
     return true;
 #endif
     return false;
+}
+
+bool
+ContentChild::RecvBidiKeyboardNotify(const bool& aIsLangRTL)
+{
+    // bidi is always of type PuppetBidiKeyboard* (because in the child, the only
+    // possible implementation of nsIBidiKeyboard is PuppetBidiKeyboard).
+    PuppetBidiKeyboard* bidi = static_cast<PuppetBidiKeyboard*>(nsContentUtils::GetBidiKeyboard());
+    if (bidi) {
+        bidi->SetIsLangRTL(aIsLangRTL);
+    }
+    return true;
 }
 
 static CancelableTask* sFirstIdleTask;
@@ -1920,6 +1873,14 @@ ContentChild::ActorDestroy(ActorDestroyReason why)
         mConsoleListener->mChild = nullptr;
     }
     mIsAlive = false;
+
+#ifdef MOZ_NUWA_PROCESS
+    if (IsNuwaProcess()) {
+        // The Nuwa cannot go through the full XPCOM shutdown path or deadlock
+        // will result.
+        QuickExit();
+    }
+#endif
 
     XRE_ShutdownChildProcess();
 }
@@ -2739,6 +2700,43 @@ ContentChild::GetBrowserOrId(TabChild* aTabChild)
     }
 }
 
+bool
+ContentChild::RecvUpdateWindow(const uintptr_t& aChildId)
+{
+#if defined(XP_WIN)
+  NS_ASSERTION(aChildId, "Expected child hwnd value for remote plugin instance.");
+  mozilla::plugins::PluginInstanceParent* parentInstance =
+    mozilla::plugins::PluginInstanceParent::LookupPluginInstanceByID(aChildId);
+  NS_ASSERTION(parentInstance, "Expected matching plugin instance");
+  if (parentInstance) {
+    // sync! update call to the plugin instance that forces the
+    // plugin to paint its child window.
+    parentInstance->CallUpdateWindow();
+  }
+  return true;
+#else
+  NS_NOTREACHED("ContentChild::RecvUpdateWindow calls unexpected on this platform.");
+  return false;
+#endif
+}
+
+PContentPermissionRequestChild*
+ContentChild::AllocPContentPermissionRequestChild(const InfallibleTArray<PermissionRequest>& aRequests,
+                                                  const IPC::Principal& aPrincipal,
+                                                  const TabId& aTabId)
+{
+    NS_RUNTIMEABORT("unused");
+    return nullptr;
+}
+
+bool
+ContentChild::DeallocPContentPermissionRequestChild(PContentPermissionRequestChild* actor)
+{
+    auto child = static_cast<RemotePermissionRequest*>(actor);
+    child->IPDLRelease();
+    return true;
+}
+
 // This code goes here rather than nsGlobalWindow.cpp because nsGlobalWindow.cpp
 // can't include ContentChild.h since it includes windows.h.
 
@@ -2772,6 +2770,64 @@ NextWindowID()
   uint64_t windowBits = windowID & ((uint64_t(1) << kWindowIDWindowBits) - 1);
 
   return (processBits << kWindowIDWindowBits) | windowBits;
+}
+
+bool
+ContentChild::RecvInvokeDragSession(nsTArray<IPCDataTransfer>&& aTransfers,
+                                    const uint32_t& aAction)
+{
+  nsCOMPtr<nsIDragService> dragService =
+    do_GetService("@mozilla.org/widget/dragservice;1");
+  if (dragService) {
+    dragService->StartDragSession();
+    nsCOMPtr<nsIDragSession> session;
+    dragService->GetCurrentSession(getter_AddRefs(session));
+    if (session) {
+      session->SetDragAction(aAction);
+      nsCOMPtr<DataTransfer> dataTransfer =
+        new DataTransfer(nullptr, NS_DRAGDROP_START, false, -1);
+      for (uint32_t i = 0; i < aTransfers.Length(); ++i) {
+        auto& items = aTransfers[i].items();
+        for (uint32_t j = 0; j < items.Length(); ++j) {
+          const IPCDataTransferItem& item = items[j];
+          nsCOMPtr<nsIWritableVariant> variant =
+             do_CreateInstance(NS_VARIANT_CONTRACTID);
+          NS_ENSURE_TRUE(variant, false);
+          if (item.data().type() == IPCDataTransferData::TnsString) {
+            const nsString& data = item.data().get_nsString();
+            variant->SetAsAString(data);
+          } else if (item.data().type() == IPCDataTransferData::TPBlobChild) {
+            BlobChild* blob = static_cast<BlobChild*>(item.data().get_PBlobChild());
+            nsRefPtr<FileImpl> fileImpl = blob->GetBlobImpl();
+            variant->SetAsISupports(fileImpl);
+          }
+          dataTransfer->SetDataWithPrincipal(NS_ConvertUTF8toUTF16(item.flavor()),
+                                             variant, i,
+                                             nsContentUtils::GetSystemPrincipal());
+        }
+      }
+      session->SetDataTransfer(dataTransfer);
+    }
+  }
+  return true;
+}
+
+bool
+ContentChild::RecvEndDragSession(const bool& aDoneDrag,
+                                 const bool& aUserCancelled)
+{
+  nsCOMPtr<nsIDragService> dragService =
+    do_GetService("@mozilla.org/widget/dragservice;1");
+  if (dragService) {
+    if (aUserCancelled) {
+      nsCOMPtr<nsIDragSession> dragSession = nsContentUtils::GetDragSession();
+      if (dragSession) {
+        dragSession->UserCancelled();
+      }
+    }
+    dragService->EndDragSession(aDoneDrag);
+  }
+  return true;
 }
 
 } // namespace dom
@@ -2875,6 +2931,9 @@ NS_EXPORT void
 AfterNuwaFork()
 {
     SetCurrentProcessPrivileges(base::PRIVILEGES_DEFAULT);
+#if defined(XP_LINUX) && defined(MOZ_SANDBOX)
+    mozilla::SandboxEarlyInit(XRE_GetProcessType(), /* isNuwa: */ false);
+#endif
 }
 
 #endif // MOZ_NUWA_PROCESS

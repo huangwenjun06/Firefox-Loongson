@@ -87,7 +87,7 @@ js::TraceCycleDetectionSet(JSTracer* trc, js::ObjectSet& set)
     for (js::ObjectSet::Enum e(set); !e.empty(); e.popFront()) {
         JSObject* key = e.front();
         trc->setTracingLocation((void*)&e.front());
-        MarkObjectRoot(trc, &key, "cycle detector table entry");
+        TraceRoot(trc, &key, "cycle detector table entry");
         if (key != e.front())
             e.rekeyFront(key);
     }
@@ -620,7 +620,9 @@ js::ExpandErrorArgumentsVA(ExclusiveContext* cx, JSErrorCallback callback,
          */
         if (argCount > 0) {
             if (efs->format) {
-                char16_t* buffer, *fmt, *out;
+                char16_t* buffer;
+                char16_t* fmt;
+                char16_t* out;
                 int expandedArgs = 0;
                 size_t expandedLength;
                 size_t len = strlen(efs->format);
@@ -987,6 +989,12 @@ bool
 JSContext::isThrowingOutOfMemory()
 {
     return throwing && unwrappedException_ == StringValue(names().outOfMemory);
+}
+
+bool
+JSContext::isClosingGenerator()
+{
+    return throwing && unwrappedException_.isMagic(JS_GENERATOR_CLOSING);
 }
 
 bool

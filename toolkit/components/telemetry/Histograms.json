@@ -28,6 +28,13 @@
     "extended_statistics_ok": true,
     "description": "time spent updating accessibility (ms)"
   },
+  "ADDON_SHIM_USAGE": {
+    "expires_in_version": "never",
+    "kind": "enumerated",
+    "n_values": 15,
+    "keyed": "true",
+    "description": "Reasons why add-on shims were used, keyed by add-on ID."
+  },
   "APPLICATION_REPUTATION_SHOULD_BLOCK": {
     "expires_in_version": "never",
     "kind": "boolean",
@@ -353,7 +360,7 @@
     "description": "Use of SpiderMonkey's deprecated language extensions in web content: ForEach=0, DestructuringForIn=1, LegacyGenerator=2, ExpressionClosure=3, LetBlock=4, LetExpression=5, NoSuchMethod=6, FlagsArgument=7"
   },
   "TELEMETRY_PING": {
-    "expires_in_version": "default",
+    "expires_in_version": "never",
     "kind": "exponential",
     "high": "3000",
     "n_buckets": 10,
@@ -361,7 +368,7 @@
     "description": "Time taken to submit telemetry info (ms)"
   },
   "TELEMETRY_SUCCESS": {
-    "expires_in_version": "default",
+    "expires_in_version": "never",
     "kind": "boolean",
     "description": "Successful telemetry submission"
   },
@@ -3496,6 +3503,16 @@
     "high": "180",
     "description": "Update: interval in days since the last background update check (timer initiated)"
   },
+  "UPDATE_PING_COUNT_EXTERNAL": {
+    "expires_in_version": "never",
+    "kind": "count",
+    "description": "Update: count of systems for this ping for comparison with other pings (externally initiated)"
+  },
+  "UPDATE_PING_COUNT_NOTIFY": {
+    "expires_in_version": "never",
+    "kind": "count",
+    "description": "Update: count of systems for this ping for comparison with other pings (timer initiated)"
+  },
   "UPDATE_SERVICE_INSTALLED_EXTERNAL": {
     "expires_in_version": "never",
     "kind": "boolean",
@@ -3516,15 +3533,15 @@
     "kind": "count",
     "description": "Update: count of systems that manually uninstalled the service (timer initiated)"
   },
-  "UPDATE_CANNOT_APPLY_EXTERNAL": {
+  "UPDATE_UNABLE_TO_APPLY_EXTERNAL": {
     "expires_in_version": "never",
-    "kind": "boolean",
-    "description": "Update: systems that cannot apply updates (externally initiated)"
+    "kind": "count",
+    "description": "Update: count of systems that cannot apply updates (externally initiated)"
   },
-  "UPDATE_CANNOT_APPLY_NOTIFY": {
+  "UPDATE_UNABLE_TO_APPLY_NOTIFY": {
     "expires_in_version": "never",
-    "kind": "boolean",
-    "description": "Update: systems that cannot apply updates (timer initiated)"
+    "kind": "count",
+    "description": "Update: count of systems that cannot apply updates (timer initiated)"
   },
   "UPDATE_CANNOT_STAGE_EXTERNAL": {
     "expires_in_version": "never",
@@ -4531,7 +4548,7 @@
   },
   "RANGE_CHECKSUM_ERRORS": {
     "alert_emails": ["perf-telemetry-alerts@mozilla.com"],
-    "expires_in_version": "40",
+    "expires_in_version": "never",
     "kind": "exponential",
     "high": "3000",
     "n_buckets": 10,
@@ -4540,7 +4557,7 @@
   },
   "BUCKET_ORDER_ERRORS": {
     "alert_emails": ["perf-telemetry-alerts@mozilla.com"],
-    "expires_in_version": "40",
+    "expires_in_version": "never",
     "kind": "exponential",
     "high": "3000",
     "n_buckets": 10,
@@ -4549,7 +4566,7 @@
   },
   "TOTAL_COUNT_HIGH_ERRORS": {
     "alert_emails": ["perf-telemetry-alerts@mozilla.com"],
-    "expires_in_version": "40",
+    "expires_in_version": "never",
     "kind": "exponential",
     "high": "3000",
     "n_buckets": 10,
@@ -4558,7 +4575,7 @@
   },
   "TOTAL_COUNT_LOW_ERRORS": {
     "alert_emails": ["perf-telemetry-alerts@mozilla.com"],
-    "expires_in_version": "40",
+    "expires_in_version": "never",
     "kind": "exponential",
     "high": "3000",
     "n_buckets": 10,
@@ -4572,55 +4589,55 @@
     "description": "Count of discarded content payloads."
   },
   "TELEMETRY_FILES_EVICTED": {
-    "alert_emails": ["rvitillo@mozilla.com"],
-    "expires_in_version": "36",
+    "alert_emails": ["perf-telemetry-alerts@mozilla.com", "rvitillo@mozilla.com"],
+    "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 30,
     "description": "Number of telemetry pings evicted at startup"
   },
   "TELEMETRY_TEST_FLAG": {
-    "expires_in_version": "default",
+    "expires_in_version": "never",
     "kind": "flag",
     "description": "a testing histogram; not meant to be touched"
   },
   "TELEMETRY_TEST_COUNT": {
-    "expires_in_version": "default",
+    "expires_in_version": "never",
     "kind": "count",
     "description": "a testing histogram; not meant to be touched"
   },
   "TELEMETRY_TEST_KEYED_FLAG": {
-    "expires_in_version": "default",
+    "expires_in_version": "never",
     "kind": "flag",
     "keyed": true,
     "description": "a testing histogram; not meant to be touched"
   },
   "TELEMETRY_TEST_KEYED_COUNT": {
-    "expires_in_version": "default",
+    "expires_in_version": "never",
     "kind": "count",
     "keyed": true,
     "description": "a testing histogram; not meant to be touched"
   },
   "TELEMETRY_TEST_RELEASE_OPTOUT": {
-    "expires_in_version": "default",
+    "expires_in_version": "never",
     "kind": "flag",
     "releaseChannelCollection": "opt-out",
     "description": "a testing histogram; not meant to be touched"
   },
   "TELEMETRY_TEST_RELEASE_OPTIN": {
-    "expires_in_version": "default",
+    "expires_in_version": "never",
     "kind": "flag",
     "releaseChannelCollection": "opt-in",
     "description": "a testing histogram; not meant to be touched"
   },
   "TELEMETRY_TEST_KEYED_RELEASE_OPTIN": {
-    "expires_in_version": "default",
+    "expires_in_version": "never",
     "kind": "flag",
     "keyed": true,
     "releaseChannelCollection": "opt-in",
     "description": "a testing histogram; not meant to be touched"
   },
   "TELEMETRY_TEST_KEYED_RELEASE_OPTOUT": {
-    "expires_in_version": "default",
+    "expires_in_version": "never",
     "kind": "flag",
     "keyed": true,
     "releaseChannelCollection": "opt-out",
@@ -4821,6 +4838,22 @@
     "keyed" : true,
     "description" : "Exceptions thrown by add-ons"
   },
+  "MISBEHAVING_ADDONS_CPOW_TIME_MS": {
+    "expires_in_version": "never",
+    "kind": "exponential",
+    "low": 1,
+    "high": 10000,
+    "n_buckets": 20,
+    "keyed": true,
+    "description": "Time spent by an add-on performing blocking cross-process communications (ms, keyed by add-on ID, updated every 15s by default)"
+  },
+  "MISBEHAVING_ADDONS_JANK_LEVEL": {
+    "expires_in_version": "never",
+    "kind": "enumerated",
+    "n_values": 10,
+    "keyed": true,
+    "description": "Longest blocking operation performed by the add-on (log2(duration in ms), keyed by add-on, updated every 15s by default)"
+  },
   "SEARCH_COUNTS": {
     "expires_in_version": "never",
     "kind": "count",
@@ -4930,7 +4963,7 @@
   },
   "READ_SAVED_PING_SUCCESS": {
     "alert_emails": ["perf-telemetry-alerts@mozilla.com"],
-    "expires_in_version": "40",
+    "expires_in_version": "never",
     "kind": "boolean",
     "description": "Successfully reading a saved ping file"
   },
@@ -7478,18 +7511,24 @@
     "kind": "boolean",
     "description": "Whether a session is set to autostart e10s windows"
   },
+  "E10S_AUTOSTART_STATUS": {
+    "expires_in_version": "never",
+    "kind": "enumerated",
+    "n_values": 6,
+    "description": "Why e10s is enabled or disabled (0=ENABLED_BY_USER, 1=ENABLED_BY_DEFAULT, 2=DISABLED_BY_USER, 3=DISABLED_IN_SAFE_MODE, 4=DISABLED_FOR_ACCESSIBILITY, 5=DISABLED_FOR_MAC_GFX)"
+  },
   "E10S_WINDOW": {
     "expires_in_version": "never",
     "kind": "boolean",
     "description": "Whether a browser window is set as an e10s window"
   },
   "E10S_STILL_ACCEPTED_FROM_PROMPT": {
-    "expires_in_version": "40",
+    "expires_in_version": "never",
     "kind": "boolean",
     "description": "Whether a user who accepted e10s from the prompt is still using e10s"
   },
   "E10S_BLOCKED_FROM_RUNNING": {
-    "expires_in_version": "40",
+    "expires_in_version": "never",
     "kind": "boolean",
     "description": "Whether the e10s pref was set but it was blocked from running due to blacklisted conditions"
   },

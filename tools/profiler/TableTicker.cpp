@@ -73,6 +73,12 @@ pid_t gettid();
  #include "EHABIStackWalk.h"
 #endif
 
+#if defined(SPS_PLAT_amd64_linux) || defined(SPS_PLAT_x86_linux)
+# define USE_LUL_STACKWALK
+# include "LulMain.h"
+# include "platform-linux-lul.h"
+#endif
+
 using std::string;
 using namespace mozilla;
 
@@ -89,6 +95,13 @@ using namespace mozilla;
   #define MAXPATHLEN 1024
  #endif
 #endif
+
+#ifdef MOZ_VALGRIND
+# include <valgrind/memcheck.h>
+#else
+# define VALGRIND_MAKE_MEM_DEFINED(_addr,_len)   ((void)0)
+#endif
+
 
 ///////////////////////////////////////////////////////////////////////
 // BEGIN SaveProfileTask et al
@@ -369,6 +382,42 @@ void TableTicker::StreamJSObject(JSStreamWriter& b)
   b.EndObject();
 }
 
+void TableTicker::FlushOnJSShutdown(JSRuntime* aRuntime)
+{
+  SetPaused(true);
+
+  {
+    mozilla::MutexAutoLock lock(*sRegisteredThreadsMutex);
+
+    for (size_t i = 0; i < sRegisteredThreads->size(); i++) {
+      // Thread not being profiled, skip it.
+      if (!sRegisteredThreads->at(i)->Profile() ||
+          sRegisteredThreads->at(i)->IsPendingDelete()) {
+        continue;
+      }
+
+      // Thread not profiling the runtime that's going away, skip it.
+      if (sRegisteredThreads->at(i)->Profile()->GetPseudoStack()->mRuntime != aRuntime) {
+        continue;
+      }
+
+      MutexAutoLock lock(*sRegisteredThreads->at(i)->Profile()->GetMutex());
+      sRegisteredThreads->at(i)->Profile()->FlushSamplesAndMarkers();
+    }
+  }
+
+  SetPaused(false);
+}
+
+void PseudoStack::flushSamplerOnJSShutdown()
+{
+  MOZ_ASSERT(mRuntime);
+  TableTicker* t = tlsTicker.get();
+  if (t) {
+    t->FlushOnJSShutdown(mRuntime);
+  }
+}
+
 // END SaveProfileTask et al
 ////////////////////////////////////////////////////////////////////////
 
@@ -515,11 +564,18 @@ void mergeStacksIntoProfile(ThreadProfile& aProfile, TickSample* aSample, Native
                                         registerState,
                                         startBufferGen);
       for (; jsCount < maxFrames && !jsIter.done(); ++jsIter) {
-        uint32_t extracted = jsIter.extractStack(jsFrames, jsCount, maxFrames);
-        MOZ_ASSERT(extracted <= (maxFrames - jsCount));
-        jsCount += extracted;
-        if (jsCount == maxFrames)
-          break;
+        // See note below regarding 'J' entries.
+        if (aSample->isSamplingCurrentThread || jsIter.isAsmJS()) {
+          uint32_t extracted = jsIter.extractStack(jsFrames, jsCount, maxFrames);
+          jsCount += extracted;
+          if (jsCount == maxFrames)
+            break;
+        } else {
+          mozilla::Maybe<JS::ProfilingFrameIterator::Frame> frame =
+            jsIter.getPhysicalFrameWithoutLabel();
+          if (frame.isSome())
+            jsFrames[jsCount++] = frame.value();
+        }
       }
     }
   }
@@ -606,15 +662,10 @@ void mergeStacksIntoProfile(ThreadProfile& aProfile, TickSample* aSample, Native
     if (jsStackAddr > nativeStackAddr) {
       MOZ_ASSERT(jsIndex >= 0);
       const JS::ProfilingFrameIterator::Frame& jsFrame = jsFrames[jsIndex];
-      addDynamicTag(aProfile, 'c', jsFrame.label);
 
-      // Stringifying optimization information and the JIT tier is delayed
-      // until streaming time. To re-lookup the entry in the
-      // JitcodeGlobalTable, we need to store the JIT code address in the
-      // circular buffer.
-      //
-      // Frames which may have optimization information are tagged by an 'O'
-      // entry. Otherwise they are tagged by a 'J' entry.
+      // Stringifying non-asm.js JIT frames is delayed until streaming
+      // time. To re-lookup the entry in the JitcodeGlobalTable, we need to
+      // store the JIT code address ('J') in the circular buffer.
       //
       // Note that we cannot do this when we are sychronously sampling the
       // current thread; that is, when called from profiler_get_backtrace. The
@@ -625,11 +676,13 @@ void mergeStacksIntoProfile(ThreadProfile& aProfile, TickSample* aSample, Native
       // its JIT code. This means that if we inserted such 'J' entries into
       // the buffer, nsRefreshDriver would now be holding on to a backtrace
       // with stale JIT code return addresses.
-      if (!aSample->isSamplingCurrentThread &&
-          (jsFrame.kind == JS::ProfilingFrameIterator::Frame_Ion ||
-           jsFrame.kind == JS::ProfilingFrameIterator::Frame_Baseline)) {
-        char entryTag = jsFrame.mightHaveTrackedOptimizations ? 'O' : 'J';
-        aProfile.addTag(ProfileEntry(entryTag, jsFrames[jsIndex].returnAddress));
+      if (aSample->isSamplingCurrentThread ||
+          jsFrame.kind == JS::ProfilingFrameIterator::Frame_AsmJS) {
+        addDynamicTag(aProfile, 'c', jsFrame.label);
+      } else {
+        MOZ_ASSERT(jsFrame.kind == JS::ProfilingFrameIterator::Frame_Ion ||
+                   jsFrame.kind == JS::ProfilingFrameIterator::Frame_Baseline);
+        aProfile.addTag(ProfileEntry('J', jsFrames[jsIndex].returnAddress));
       }
 
       jsIndex--;
@@ -638,10 +691,14 @@ void mergeStacksIntoProfile(ThreadProfile& aProfile, TickSample* aSample, Native
 
     // If we reach here, there must be a native stack entry and it must be the
     // greatest entry.
-    MOZ_ASSERT(nativeStackAddr);
-    MOZ_ASSERT(nativeIndex >= 0);
-    aProfile.addTag(ProfileEntry('l', (void*)aNativeStack.pc_array[nativeIndex]));
-    nativeIndex--;
+    if (nativeStackAddr) {
+      MOZ_ASSERT(nativeIndex >= 0);
+      aProfile
+        .addTag(ProfileEntry('l', (void*)aNativeStack.pc_array[nativeIndex]));
+    }
+    if (nativeIndex >= 0) {
+      nativeIndex--;
+    }
   }
 
   // Update the JS runtime with the current profile sample buffer generation.
@@ -720,6 +777,7 @@ void TableTicker::doNativeBacktrace(ThreadProfile &aProfile, TickSample* aSample
 }
 #endif
 
+
 #ifdef USE_EHABI_STACKWALK
 void TableTicker::doNativeBacktrace(ThreadProfile &aProfile, TickSample* aSample)
 {
@@ -785,8 +843,113 @@ void TableTicker::doNativeBacktrace(ThreadProfile &aProfile, TickSample* aSample
 
   mergeStacksIntoProfile(aProfile, aSample, nativeStack);
 }
-
 #endif
+
+
+#ifdef USE_LUL_STACKWALK
+void TableTicker::doNativeBacktrace(ThreadProfile &aProfile, TickSample* aSample)
+{
+  const mcontext_t* mc
+    = &reinterpret_cast<ucontext_t *>(aSample->context)->uc_mcontext;
+
+  lul::UnwindRegs startRegs;
+  memset(&startRegs, 0, sizeof(startRegs));
+
+# if defined(SPS_PLAT_amd64_linux)
+  startRegs.xip = lul::TaggedUWord(mc->gregs[REG_RIP]);
+  startRegs.xsp = lul::TaggedUWord(mc->gregs[REG_RSP]);
+  startRegs.xbp = lul::TaggedUWord(mc->gregs[REG_RBP]);
+# elif defined(SPS_PLAT_arm_android)
+  startRegs.r15 = lul::TaggedUWord(mc->arm_pc);
+  startRegs.r14 = lul::TaggedUWord(mc->arm_lr);
+  startRegs.r13 = lul::TaggedUWord(mc->arm_sp);
+  startRegs.r12 = lul::TaggedUWord(mc->arm_ip);
+  startRegs.r11 = lul::TaggedUWord(mc->arm_fp);
+  startRegs.r7  = lul::TaggedUWord(mc->arm_r7);
+# elif defined(SPS_PLAT_x86_linux) || defined(SPS_PLAT_x86_android)
+  startRegs.xip = lul::TaggedUWord(mc->gregs[REG_EIP]);
+  startRegs.xsp = lul::TaggedUWord(mc->gregs[REG_ESP]);
+  startRegs.xbp = lul::TaggedUWord(mc->gregs[REG_EBP]);
+# else
+#   error "Unknown plat"
+# endif
+
+  /* Copy up to N_STACK_BYTES from rsp-REDZONE upwards, but not
+     going past the stack's registered top point.  Do some basic
+     sanity checks too.  This assumes that the TaggedUWord holding
+     the stack pointer value is valid, but it should be, since it
+     was constructed that way in the code just above. */
+
+  lul::StackImage stackImg;
+
+  {
+#   if defined(SPS_PLAT_amd64_linux)
+    uintptr_t rEDZONE_SIZE = 128;
+    uintptr_t start = startRegs.xsp.Value() - rEDZONE_SIZE;
+#   elif defined(SPS_PLAT_arm_android)
+    uintptr_t rEDZONE_SIZE = 0;
+    uintptr_t start = startRegs.r13.Value() - rEDZONE_SIZE;
+#   elif defined(SPS_PLAT_x86_linux) || defined(SPS_PLAT_x86_android)
+    uintptr_t rEDZONE_SIZE = 0;
+    uintptr_t start = startRegs.xsp.Value() - rEDZONE_SIZE;
+#   else
+#     error "Unknown plat"
+#   endif
+    uintptr_t end   = reinterpret_cast<uintptr_t>(aProfile.GetStackTop());
+    uintptr_t ws    = sizeof(void*);
+    start &= ~(ws-1);
+    end   &= ~(ws-1);
+    uintptr_t nToCopy = 0;
+    if (start < end) {
+      nToCopy = end - start;
+      if (nToCopy > lul::N_STACK_BYTES)
+        nToCopy = lul::N_STACK_BYTES;
+    }
+    MOZ_ASSERT(nToCopy <= lul::N_STACK_BYTES);
+    stackImg.mLen       = nToCopy;
+    stackImg.mStartAvma = start;
+    if (nToCopy > 0) {
+      memcpy(&stackImg.mContents[0], (void*)start, nToCopy);
+      (void)VALGRIND_MAKE_MEM_DEFINED(&stackImg.mContents[0], nToCopy);
+    }
+  }
+
+  // The maximum number of frames that LUL will produce.  Setting it
+  // too high gives a risk of it wasting a lot of time looping on
+  // corrupted stacks.
+  const int MAX_NATIVE_FRAMES = 256;
+
+  size_t scannedFramesAllowed = 0;
+
+  uintptr_t framePCs[MAX_NATIVE_FRAMES];
+  uintptr_t frameSPs[MAX_NATIVE_FRAMES];
+  size_t framesAvail = mozilla::ArrayLength(framePCs);
+  size_t framesUsed  = 0;
+  size_t scannedFramesAcquired = 0;
+  sLUL->Unwind( &framePCs[0], &frameSPs[0],
+                &framesUsed, &scannedFramesAcquired,
+                framesAvail, scannedFramesAllowed,
+                &startRegs, &stackImg );
+
+  NativeStack nativeStack = {
+    reinterpret_cast<void**>(framePCs),
+    reinterpret_cast<void**>(frameSPs),
+    mozilla::ArrayLength(framePCs),
+    0
+  };
+
+  nativeStack.count = framesUsed;
+
+  mergeStacksIntoProfile(aProfile, aSample, nativeStack);
+
+  // Update stats in the LUL stats object.  Unfortunately this requires
+  // three global memory operations.
+  sLUL->mStats.mContext += 1;
+  sLUL->mStats.mCFI     += framesUsed - 1 - scannedFramesAcquired;
+  sLUL->mStats.mScanned += scannedFramesAcquired;
+}
+#endif
+
 
 static
 void doSampleStackTrace(ThreadProfile &aProfile, TickSample *aSample, bool aAddLeafAddresses)
@@ -807,11 +970,7 @@ void doSampleStackTrace(ThreadProfile &aProfile, TickSample *aSample, bool aAddL
 void TableTicker::Tick(TickSample* sample)
 {
   // Don't allow for ticks to happen within other ticks.
-  if (HasUnwinderThread()) {
-    UnwinderTick(sample);
-  } else {
-    InplaceTick(sample);
-  }
+  InplaceTick(sample);
 }
 
 void TableTicker::InplaceTick(TickSample* sample)
@@ -822,7 +981,8 @@ void TableTicker::InplaceTick(TickSample* sample)
 
   PseudoStack* stack = currThreadProfile.GetPseudoStack();
 
-#if defined(USE_NS_STACKWALK) || defined(USE_EHABI_STACKWALK)
+#if defined(USE_NS_STACKWALK) || defined(USE_EHABI_STACKWALK) || \
+    defined(USE_LUL_STACKWALK)
   if (mUseStackWalk) {
     doNativeBacktrace(currThreadProfile, sample);
   } else {
@@ -913,15 +1073,9 @@ SyncProfile* TableTicker::GetBacktrace()
   sample.isSamplingCurrentThread = true;
   sample.timestamp = mozilla::TimeStamp::Now();
 
-  if (!HasUnwinderThread()) {
-    profile->BeginUnwind();
-  }
-
+  profile->BeginUnwind();
   Tick(&sample);
-
-  if (!HasUnwinderThread()) {
-    profile->EndUnwind();
-  }
+  profile->EndUnwind();
 
   return profile;
 }

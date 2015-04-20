@@ -47,6 +47,7 @@ interface NavigatorID {
   readonly attribute DOMString product; // constant "Gecko"
 
   // Everyone but WebKit/Blink supports this.  See bug 679971.
+  [Exposed=Window]
   boolean taintEnabled(); // constant false
 };
 
@@ -410,6 +411,11 @@ partial interface Navigator {
 partial interface Navigator {
   [Pref="dom.tv.enabled", CheckPermissions="tv", Func="Navigator::HasTVSupport"]
   readonly attribute TVManager? tv;
+};
+
+partial interface Navigator {
+  [Throws, Pref="dom.inputport.enabled", CheckPermissions="inputport", AvailableIn=CertifiedApps]
+  readonly attribute InputPortManager inputPortManager;
 };
 
 #ifdef MOZ_EME

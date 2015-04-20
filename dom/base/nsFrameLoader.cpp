@@ -340,19 +340,18 @@ nsFrameLoader::ReallyStartLoadingInternal()
   }
 
   if (mRemoteFrame) {
-    if (!mRemoteBrowser) {
-      TryRemoteBrowser();
-
-      if (!mRemoteBrowser) {
+    if (!mRemoteBrowser && !TryRemoteBrowser()) {
         NS_WARNING("Couldn't create child process for iframe.");
         return NS_ERROR_FAILURE;
-      }
     }
 
-    if (mRemoteBrowserShown || ShowRemoteFrame(ScreenIntSize(0, 0))) {
-      // FIXME get error codes from child
-      mRemoteBrowser->LoadURL(mURIToLoad);
-    } else {
+    // Execute pending frame scripts before loading URL
+    EnsureMessageManager();
+
+    // FIXME get error codes from child
+    mRemoteBrowser->LoadURL(mURIToLoad);
+    
+    if (!mRemoteBrowserShown && !ShowRemoteFrame(ScreenIntSize(0, 0))) {
       NS_WARNING("[nsFrameLoader] ReallyStartLoadingInternal tried but couldn't show remote browser.\n");
     }
 
@@ -832,13 +831,9 @@ nsFrameLoader::ShowRemoteFrame(const ScreenIntSize& size,
 {
   NS_ASSERTION(mRemoteFrame, "ShowRemote only makes sense on remote frames.");
 
-  if (!mRemoteBrowser) {
-    TryRemoteBrowser();
-
-    if (!mRemoteBrowser) {
-      NS_ERROR("Couldn't create child process.");
-      return false;
-    }
+  if (!mRemoteBrowser && !TryRemoteBrowser()) {
+    NS_ERROR("Couldn't create child process.");
+    return false;
   }
 
   // FIXME/bug 589337: Show()/Hide() is pretty expensive for
@@ -884,8 +879,7 @@ nsFrameLoader::ShowRemoteFrame(const ScreenIntSize& size,
 
     // Don't show remote iframe if we are waiting for the completion of reflow.
     if (!aFrame || !(aFrame->GetStateBits() & NS_FRAME_FIRST_REFLOW)) {
-      nsIntPoint chromeDisp = aFrame->GetChromeDisplacement();
-      mRemoteBrowser->UpdateDimensions(dimensions, size, chromeDisp);
+      mRemoteBrowser->UpdateDimensions(dimensions, size);
     }
   }
 
@@ -978,6 +972,20 @@ nsFrameLoader::SwapWithOtherRemoteLoader(nsFrameLoader* aOther,
     mInSwap = aOther->mInSwap = false;
     return rv;
   }
+
+  mRemoteBrowser->SwapLayerTreeObservers(aOther->mRemoteBrowser);
+
+  nsCOMPtr<nsIBrowserDOMWindow> otherBrowserDOMWindow =
+    aOther->mRemoteBrowser->GetBrowserDOMWindow();
+  nsCOMPtr<nsIBrowserDOMWindow> browserDOMWindow =
+    mRemoteBrowser->GetBrowserDOMWindow();
+
+  if (!otherBrowserDOMWindow || !browserDOMWindow) {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+
+  aOther->mRemoteBrowser->SetBrowserDOMWindow(browserDOMWindow);
+  mRemoteBrowser->SetBrowserDOMWindow(otherBrowserDOMWindow);
 
   // Native plugin windows used by this remote content need to be reparented.
   const nsTArray<mozilla::plugins::PPluginWidgetParent*>& plugins =
@@ -1381,6 +1389,12 @@ nsFrameLoader::StartDestroy()
     if (mRemoteBrowser) {
       mRemoteBrowser->CacheFrameLoader(this);
     }
+  }
+
+  // If the TabParent has installed any event listeners on the window, this is
+  // its last chance to remove them while we're still in the document.
+  if (mRemoteBrowser) {
+    mRemoteBrowser->RemoveWindowListeners();
   }
 
   nsCOMPtr<nsIDocument> doc;
@@ -2058,8 +2072,7 @@ nsFrameLoader::UpdatePositionAndSize(nsSubDocumentFrame *aIFrame)
       ScreenIntSize size = aIFrame->GetSubdocumentSize();
       nsIntRect dimensions;
       NS_ENSURE_SUCCESS(GetWindowDimensions(dimensions), NS_ERROR_FAILURE);
-      nsIntPoint chromeDisp = aIFrame->GetChromeDisplacement();
-      mRemoteBrowser->UpdateDimensions(dimensions, size, chromeDisp);
+      mRemoteBrowser->UpdateDimensions(dimensions, size);
     }
     return NS_OK;
   }
@@ -2258,28 +2271,31 @@ nsFrameLoader::TryRemoteBrowser()
 
   nsCOMPtr<Element> ownerElement = mOwnerContent;
   mRemoteBrowser = ContentParent::CreateBrowserOrApp(context, ownerElement, openerContentParent);
-  if (mRemoteBrowser) {
-    mChildID = mRemoteBrowser->Manager()->ChildID();
-    nsCOMPtr<nsIDocShellTreeItem> rootItem;
-    parentDocShell->GetRootTreeItem(getter_AddRefs(rootItem));
-    nsCOMPtr<nsIDOMWindow> rootWin = rootItem->GetWindow();
-    nsCOMPtr<nsIDOMChromeWindow> rootChromeWin = do_QueryInterface(rootWin);
-
-    if (rootChromeWin) {
-      nsCOMPtr<nsIBrowserDOMWindow> browserDOMWin;
-      rootChromeWin->GetBrowserDOMWindow(getter_AddRefs(browserDOMWin));
-      mRemoteBrowser->SetBrowserDOMWindow(browserDOMWin);
-    }
-
-    mContentParent = mRemoteBrowser->Manager();
-
-    if (mOwnerContent->AttrValueIs(kNameSpaceID_None,
-                                   nsGkAtoms::mozpasspointerevents,
-                                   nsGkAtoms::_true,
-                                   eCaseMatters)) {
-      unused << mRemoteBrowser->SendSetUpdateHitRegion(true);
-    }
+  if (!mRemoteBrowser) {
+    return false;
   }
+
+  mContentParent = mRemoteBrowser->Manager();
+  mChildID = mRemoteBrowser->Manager()->ChildID();
+
+  nsCOMPtr<nsIDocShellTreeItem> rootItem;
+  parentDocShell->GetRootTreeItem(getter_AddRefs(rootItem));
+  nsCOMPtr<nsIDOMWindow> rootWin = rootItem->GetWindow();
+  nsCOMPtr<nsIDOMChromeWindow> rootChromeWin = do_QueryInterface(rootWin);
+
+  if (rootChromeWin) {
+    nsCOMPtr<nsIBrowserDOMWindow> browserDOMWin;
+    rootChromeWin->GetBrowserDOMWindow(getter_AddRefs(browserDOMWin));
+    mRemoteBrowser->SetBrowserDOMWindow(browserDOMWin);
+  }
+
+  if (mOwnerContent->AttrValueIs(kNameSpaceID_None,
+                                 nsGkAtoms::mozpasspointerevents,
+                                 nsGkAtoms::_true,
+                                 eCaseMatters)) {
+    unused << mRemoteBrowser->SendSetUpdateHitRegion(true);
+  }
+
   return true;
 }
 
@@ -2495,7 +2511,9 @@ nsFrameLoader::GetMessageManager(nsIMessageSender** aManager)
 {
   EnsureMessageManager();
   if (mMessageManager) {
-    CallQueryInterface(mMessageManager, aManager);
+    nsRefPtr<nsFrameMessageManager> mm(mMessageManager);
+    mm.forget(aManager);
+    return NS_OK;
   }
   return NS_OK;
 }
@@ -2522,7 +2540,7 @@ nsFrameLoader::EnsureMessageManager()
 
   bool useRemoteProcess = ShouldUseRemoteProcess();
   if (mMessageManager) {
-    if (useRemoteProcess && mRemoteBrowserShown) {
+    if (useRemoteProcess && mRemoteBrowser) {
       mMessageManager->InitWithCallback(this);
     }
     return NS_OK;
@@ -2547,7 +2565,7 @@ nsFrameLoader::EnsureMessageManager()
   }
 
   if (useRemoteProcess) {
-    mMessageManager = new nsFrameMessageManager(mRemoteBrowserShown ? this : nullptr,
+    mMessageManager = new nsFrameMessageManager(mRemoteBrowser ? this : nullptr,
                                                 static_cast<nsFrameMessageManager*>(parentManager.get()),
                                                 MM_CHROME);
   } else {

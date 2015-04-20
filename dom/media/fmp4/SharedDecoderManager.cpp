@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SharedDecoderManager.h"
-#include "mp4_demuxer/DecoderData.h"
 
 namespace mozilla {
 
@@ -76,22 +75,25 @@ SharedDecoderManager::~SharedDecoderManager()
 already_AddRefed<MediaDataDecoder>
 SharedDecoderManager::CreateVideoDecoder(
   PlatformDecoderModule* aPDM,
-  const mp4_demuxer::VideoDecoderConfig& aConfig,
+  const VideoInfo& aConfig,
   layers::LayersBackend aLayersBackend,
   layers::ImageContainer* aImageContainer,
   FlushableMediaTaskQueue* aVideoTaskQueue,
   MediaDataDecoderCallback* aCallback)
 {
   if (!mDecoder) {
+    mLayersBackend = aLayersBackend;
+    mImageContainer = aImageContainer;
     // We use the manager's task queue for the decoder, rather than the one
     // passed in, so that none of the objects sharing the decoder can shutdown
     // the task queue while we're potentially still using it for a *different*
     // object also sharing the decoder.
-    mDecoder = aPDM->CreateVideoDecoder(aConfig,
-                                        aLayersBackend,
-                                        aImageContainer,
-                                        mTaskQueue,
-                                        mCallback);
+    mDecoder =
+      aPDM->CreateDecoder(aConfig,
+                          mTaskQueue,
+                          mCallback,
+                          mLayersBackend,
+                          mImageContainer);
     if (!mDecoder) {
       mPDM = nullptr;
       return nullptr;
@@ -113,17 +115,15 @@ SharedDecoderManager::DisableHardwareAcceleration()
 }
 
 bool
-SharedDecoderManager::Recreate(const mp4_demuxer::VideoDecoderConfig& aConfig,
-                               layers::LayersBackend aLayersBackend,
-                               layers::ImageContainer* aImageContainer)
+SharedDecoderManager::Recreate(const VideoInfo& aConfig)
 {
   mDecoder->Flush();
   mDecoder->Shutdown();
-  mDecoder = mPDM->CreateVideoDecoder(aConfig,
-                                      aLayersBackend,
-                                      aImageContainer,
-                                      mTaskQueue,
-                                      mCallback);
+  mDecoder = mPDM->CreateDecoder(aConfig,
+                                 mTaskQueue,
+                                 mCallback,
+                                 mLayersBackend,
+                                 mImageContainer);
   if (!mDecoder) {
     return false;
   }
@@ -141,11 +141,6 @@ SharedDecoderManager::Select(SharedDecoderProxy* aProxy)
 
   mActiveProxy = aProxy;
   mActiveCallback = aProxy->mCallback;
-
-  if (mDecoderReleasedResources) {
-    mDecoder->AllocateMediaResources();
-    mDecoderReleasedResources = false;
-  }
 }
 
 void
@@ -173,14 +168,6 @@ SharedDecoderManager::DrainComplete()
   } else {
     mActiveCallback->DrainComplete();
   }
-}
-
-void
-SharedDecoderManager::ReleaseMediaResources()
-{
-  mDecoderReleasedResources = true;
-  mDecoder->ReleaseMediaResources();
-  mActiveProxy = nullptr;
 }
 
 void
@@ -217,7 +204,7 @@ SharedDecoderProxy::Init()
 }
 
 nsresult
-SharedDecoderProxy::Input(mp4_demuxer::MP4Sample* aSample)
+SharedDecoderProxy::Input(MediaRawData* aSample)
 {
   if (mManager->mActiveProxy != this) {
     mManager->Select(this);
@@ -259,20 +246,6 @@ SharedDecoderProxy::IsWaitingMediaResources()
     return mManager->mDecoder->IsWaitingMediaResources();
   }
   return mManager->mActiveProxy != nullptr;
-}
-
-bool
-SharedDecoderProxy::IsDormantNeeded()
-{
-  return mManager->mDecoder->IsDormantNeeded();
-}
-
-void
-SharedDecoderProxy::ReleaseMediaResources()
-{
-  if (mManager->mActiveProxy == this) {
-    mManager->ReleaseMediaResources();
-  }
 }
 
 bool

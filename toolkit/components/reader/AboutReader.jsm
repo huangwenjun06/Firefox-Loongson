@@ -8,6 +8,7 @@ let Ci = Components.interfaces, Cc = Components.classes, Cu = Components.utils;
 
 this.EXPORTED_SYMBOLS = [ "AboutReader" ];
 
+Cu.import("resource://gre/modules/ReaderMode.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
@@ -48,13 +49,13 @@ let AboutReader = function(mm, win, articlePromise) {
   this._domainElementRef = Cu.getWeakReference(doc.getElementById("reader-domain"));
   this._titleElementRef = Cu.getWeakReference(doc.getElementById("reader-title"));
   this._creditsElementRef = Cu.getWeakReference(doc.getElementById("reader-credits"));
-  this._contentElementRef = Cu.getWeakReference(doc.getElementById("reader-content"));
+  this._contentElementRef = Cu.getWeakReference(doc.getElementById("moz-reader-content"));
   this._toolbarElementRef = Cu.getWeakReference(doc.getElementById("reader-toolbar"));
   this._messageElementRef = Cu.getWeakReference(doc.getElementById("reader-message"));
 
   this._scrollOffset = win.pageYOffset;
 
-  doc.getElementById("container").addEventListener("click", this, false);
+  doc.addEventListener("click", this, false);
 
   win.addEventListener("unload", this, false);
   win.addEventListener("scroll", this, false);
@@ -211,7 +212,11 @@ AboutReader.prototype = {
 
     switch (aEvent.type) {
       case "click":
-        this._toggleToolbarVisibility();
+        let target = aEvent.target;
+        while (target && target.id != "reader-popup")
+          target = target.parentNode;
+        if (!target)
+          this._toggleToolbarVisibility();
         break;
       case "scroll":
         let isScrollingUp = this._scrollOffset > aEvent.pageY;
@@ -266,8 +271,12 @@ AboutReader.prototype = {
 
           // Display the toolbar when all its initial component states are known
           if (isInitialStateChange) {
-            // Hacks! Delay showing the toolbar to avoid position: fixed; jankiness. See bug 975533.
-            this._win.setTimeout(() => this._setToolbarVisibility(true), 500);
+            // Toolbar display is updated here to avoid it appearing in the middle of the screen on page load. See bug 1145567.
+            this._win.setTimeout(() => {
+              this._toolbarElement.style.display = "block";
+              // Delay showing the toolbar to have a nice slide from bottom animation.
+              this._win.setTimeout(() => this._setToolbarVisibility(true), 200);
+            }, 500);
           }
         }
       }
@@ -350,13 +359,13 @@ AboutReader.prototype = {
   },
 
   _setFontSize: function Reader_setFontSize(newFontSize) {
-    let htmlClasses = this._doc.documentElement.classList;
+    let containerClasses = this._doc.getElementById("container").classList;
 
     if (this._fontSize > 0)
-      htmlClasses.remove("font-size" + this._fontSize);
+      containerClasses.remove("font-size" + this._fontSize);
 
     this._fontSize = newFontSize;
-    htmlClasses.add("font-size" + this._fontSize);
+    containerClasses.add("font-size" + this._fontSize);
 
     this._mm.sendAsyncMessage("Reader:SetIntPref", {
       name: "reader.font_size",
@@ -600,7 +609,7 @@ AboutReader.prototype = {
       return;
     }
 
-    if (article && article.url == url) {
+    if (article) {
       this._showContent(article);
     } else if (this._articlePromise) {
       // If we were promised an article, show an error message if there's a failure.
@@ -726,9 +735,8 @@ AboutReader.prototype = {
 
     this._domainElement.href = article.url;
     let articleUri = Services.io.newURI(article.url, null, null);
-    this._domainElement.innerHTML = this._stripHost(articleUri.host);
-
-    this._creditsElement.innerHTML = article.byline;
+    this._domainElement.textContent = this._stripHost(articleUri.host);
+    this._creditsElement.textContent = article.byline;
 
     this._titleElement.textContent = article.title;
     this._doc.title = article.title;
@@ -779,12 +787,7 @@ AboutReader.prototype = {
    */
   _getOriginalUrl: function(win) {
     let url = win ? win.location.href : this._win.location.href;
-    let searchParams = new URLSearchParams(url.split("?")[1]);
-    if (!searchParams.has("url")) {
-      Cu.reportError("Error finding original URL for about:reader URL: " + url);
-      return url;
-    }
-    return decodeURIComponent(searchParams.get("url"));
+    return ReaderMode.getOriginalUrl(url) || url;
   },
 
   _setupSegmentedButton: function Reader_setupSegmentedButton(id, options, initialValue, callback) {

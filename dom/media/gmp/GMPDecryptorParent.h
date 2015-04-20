@@ -10,14 +10,14 @@
 #include "mozilla/RefPtr.h"
 #include "gmp-decryption.h"
 #include "GMPDecryptorProxy.h"
-namespace mp4_demuxer {
-class CryptoSample;
-}
 
 namespace mozilla {
+
+class CryptoSample;
+
 namespace gmp {
 
-class GMPParent;
+class GMPContentParent;
 
 class GMPDecryptorParent final : public GMPDecryptorProxy
                                , public PGMPDecryptorParent
@@ -25,7 +25,7 @@ class GMPDecryptorParent final : public GMPDecryptorProxy
 public:
   NS_INLINE_DECL_REFCOUNTING(GMPDecryptorParent)
 
-  explicit GMPDecryptorParent(GMPParent *aPlugin);
+  explicit GMPDecryptorParent(GMPContentParent *aPlugin);
 
   // GMPDecryptorProxy
 
@@ -56,7 +56,7 @@ public:
                                     const nsTArray<uint8_t>& aServerCert) override;
 
   virtual void Decrypt(uint32_t aId,
-                       const mp4_demuxer::CryptoSample& aCrypto,
+                       const CryptoSample& aCrypto,
                        const nsTArray<uint8_t>& aBuffer) override;
 
   virtual void Close() override;
@@ -104,12 +104,14 @@ private:
 
   virtual bool RecvSetCaps(const uint64_t& aCaps) override;
 
+  virtual bool RecvShutdown() override;
+
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
   virtual bool Recv__delete__() override;
 
   bool mIsOpen;
   bool mShuttingDown;
-  nsRefPtr<GMPParent> mPlugin;
+  nsRefPtr<GMPContentParent> mPlugin;
   nsCString mPluginId;
   GMPDecryptorProxyCallback* mCallback;
 #ifdef DEBUG

@@ -310,7 +310,7 @@ void
 Bindings::trace(JSTracer* trc)
 {
     if (callObjShape_)
-        MarkShape(trc, &callObjShape_, "callObjShape");
+        TraceEdge(trc, &callObjShape_, "callObjShape");
 
     /*
      * As the comment in Bindings explains, bindingsArray may point into freed
@@ -320,9 +320,9 @@ Bindings::trace(JSTracer* trc)
     if (bindingArrayUsingTemporaryStorage())
         return;
 
-    for (Binding* b = bindingArray(), *end = b + count(); b != end; b++) {
-        PropertyName* name = b->name();
-        MarkStringUnbarriered(trc, &name, "bindingArray");
+    for (const Binding& b : *this) {
+        PropertyName* name = b.name();
+        TraceManuallyBarrieredEdge(trc, &name, "bindingArray");
     }
 }
 
@@ -504,27 +504,32 @@ XDRRelazificationInfo(XDRState<mode>* xdr, HandleFunction fun, HandleScript scri
             MOZ_ASSERT(end == lazy->end());
             MOZ_ASSERT(lineno == lazy->lineno());
             MOZ_ASSERT(column == lazy->column());
+            // We can assert we have no inner functions because we don't
+            // relazify scripts with inner functions.  See
+            // JSFunction::createScriptForLazilyInterpretedFunction.
+            MOZ_ASSERT(lazy->numInnerFunctions() == 0);
         }
 
         if (!xdr->codeUint64(&packedFields))
             return false;
 
         if (mode == XDR_DECODE) {
-            lazy.set(LazyScript::Create(cx, fun, packedFields, begin, end, lineno, column));
+            lazy.set(LazyScript::Create(cx, fun, script, enclosingScope, script,
+                                        packedFields, begin, end, lineno, column));
 
             // As opposed to XDRLazyScript, we need to restore the runtime bits
             // of the script, as we are trying to match the fact this function
             // has already been parsed and that it would need to be re-lazified.
             lazy->initRuntimeFields(packedFields);
-
-            MOZ_ASSERT(!lazy->sourceObject());
-            lazy->setParent(enclosingScope, &script->scriptSourceUnwrap());
         }
     }
 
     // Code free variables.
     if (!XDRLazyFreeVariables(xdr, lazy))
         return false;
+
+    // No need to do anything with inner functions, since we asserted we don't
+    // have any.
 
     return true;
 }
@@ -576,7 +581,6 @@ js::XDRScript(XDRState<mode>* xdr, HandleObject enclosingScope, HandleScript enc
         OwnSource,
         ExplicitUseStrict,
         SelfHosted,
-        IsCompileAndGo,
         HasSingleton,
         TreatAsRunOnce,
         HasLazyScript,
@@ -606,6 +610,22 @@ js::XDRScript(XDRState<mode>* xdr, HandleObject enclosingScope, HandleScript enc
     if (mode == XDR_ENCODE) {
         script = scriptp.get();
         MOZ_ASSERT_IF(enclosingScript, enclosingScript->compartment() == script->compartment());
+        MOZ_ASSERT(script->functionNonDelazifying() == fun);
+
+        if (!fun && script->treatAsRunOnce()) {
+            // This is a toplevel or eval script that's runOnce.  We want to
+            // make sure that we're not XDR-saving an object we emitted for
+            // JSOP_OBJECT that then got modified.  So throw if we're not
+            // cloning in JSOP_OBJECT or if we ever didn't clone in it in the
+            // past.
+            const JS::CompartmentOptions& opts = JS::CompartmentOptionsRef(cx);
+            if (!opts.cloneSingletons() || !opts.getSingletonsAsTemplates()) {
+                JS_ReportError(cx,
+                               "Can't serialize a run-once non-function script "
+                               "when we're not doing singleton cloning");
+                return false;
+            }
+        }
 
         nargs = script->bindings.numArgs();
         nblocklocals = script->bindings.numBlockScoped();
@@ -690,8 +710,6 @@ js::XDRScript(XDRState<mode>* xdr, HandleObject enclosingScope, HandleScript enc
             scriptBits |= (1 << IsLegacyGenerator);
         if (script->isStarGenerator())
             scriptBits |= (1 << IsStarGenerator);
-        if (script->compileAndGo())
-            scriptBits |= (1 << IsCompileAndGo);
         if (script->hasSingletons())
             scriptBits |= (1 << HasSingleton);
         if (script->treatAsRunOnce())
@@ -811,8 +829,6 @@ js::XDRScript(XDRState<mode>* xdr, HandleObject enclosingScope, HandleScript enc
             script->setNeedsArgsObj(true);
         if (scriptBits & (1 << IsGeneratorExp))
             script->isGeneratorExp_ = true;
-        if (scriptBits & (1 << IsCompileAndGo))
-            script->compileAndGo_ = true;
         if (scriptBits & (1 << HasSingleton))
             script->hasSingletons_ = true;
         if (scriptBits & (1 << TreatAsRunOnce))
@@ -1143,7 +1159,8 @@ js::XDRLazyScript(XDRState<mode>* xdr, HandleObject enclosingScope, HandleScript
         }
 
         if (mode == XDR_DECODE)
-            lazy.set(LazyScript::Create(cx, fun, packedFields, begin, end, lineno, column));
+            lazy.set(LazyScript::Create(cx, fun, NullPtr(), enclosingScope, enclosingScript,
+                                        packedFields, begin, end, lineno, column));
     }
 
     // Code free variables.
@@ -1165,15 +1182,6 @@ js::XDRLazyScript(XDRState<mode>* xdr, HandleObject enclosingScope, HandleScript
             if (mode == XDR_DECODE)
                 innerFunctions[i] = func;
         }
-    }
-
-    if (mode == XDR_DECODE) {
-        MOZ_ASSERT(!lazy->sourceObject());
-        ScriptSourceObject* sourceObject = &enclosingScript->scriptSourceUnwrap();
-
-        // Set the enclosing scope of the lazy function, this would later be
-        // used to define the environment when the function would be used.
-        lazy->setParent(enclosingScope, sourceObject);
     }
 
     return true;
@@ -1329,7 +1337,7 @@ ScriptSourceObject::trace(JSTracer* trc, JSObject* obj)
     if (!sso->getReservedSlot(INTRODUCTION_SCRIPT_SLOT).isMagic(JS_GENERIC_MAGIC)) {
         JSScript* script = sso->introductionScript();
         if (script) {
-            MarkScriptUnbarriered(trc, &script, "ScriptSourceObject introductionScript");
+            TraceManuallyBarrieredEdge(trc, &script, "ScriptSourceObject introductionScript");
             sso->setReservedSlot(INTRODUCTION_SCRIPT_SLOT, PrivateValue(script));
         }
     }
@@ -2399,10 +2407,10 @@ JSScript::Create(ExclusiveContext* cx, HandleObject enclosingScope, bool savedCa
     script->savedCallerFun_ = savedCallerFun;
     script->initCompartment(cx);
 
-    script->compileAndGo_ = options.compileAndGo;
     script->hasPollutedGlobalScope_ = options.hasPollutedGlobalScope;
     script->selfHosted_ = options.selfHostingMode;
     script->noScriptRval_ = options.noScriptRval;
+    script->treatAsRunOnce_ = options.isRunOnce;
 
     script->version = options.version;
     MOZ_ASSERT(script->getVersion() == options.version);     // assert that no overflow occurred
@@ -2617,6 +2625,7 @@ JSScript::fullyInitFromEmitter(ExclusiveContext* cx, HandleScript script, Byteco
     script->bindingsAccessedDynamically_ = bce->sc->bindingsAccessedDynamically();
     script->funHasExtensibleScope_ = funbox ? funbox->hasExtensibleScope() : false;
     script->funNeedsDeclEnvObject_ = funbox ? funbox->needsDeclEnvObject() : false;
+    script->needsHomeObject_       = funbox ? funbox->needsHomeObject() : false;
     script->hasSingletons_ = bce->hasSingletons;
 
     if (funbox) {
@@ -2915,12 +2924,13 @@ js::DescribeScriptedCallerForCompilation(JSContext* cx, MutableHandleScript mayb
                     "next op after a direct eval must be at consistent offset");
         MOZ_ASSERT(JSOp(*pc) == JSOP_EVAL || JSOp(*pc) == JSOP_STRICTEVAL ||
                    JSOp(*pc) == JSOP_SPREADEVAL || JSOp(*pc) == JSOP_STRICTSPREADEVAL);
-        mozilla::DebugOnly<bool> isSpread = JSOp(*pc) == JSOP_SPREADEVAL ||
-                                            JSOp(*pc) == JSOP_STRICTSPREADEVAL;
-        MOZ_ASSERT(*(pc + (isSpread ? JSOP_SPREADEVAL_LENGTH : JSOP_EVAL_LENGTH)) == JSOP_LINENO);
+
+        bool isSpread = JSOp(*pc) == JSOP_SPREADEVAL || JSOp(*pc) == JSOP_STRICTSPREADEVAL;
+        jsbytecode* nextpc = pc + (isSpread ? JSOP_SPREADEVAL_LENGTH : JSOP_EVAL_LENGTH);
+        MOZ_ASSERT(*nextpc == JSOP_LINENO);
+
         *file = maybeScript->filename();
-        *linenop = GET_UINT16(pc + (JSOp(*pc) == JSOP_EVAL ? JSOP_EVAL_LENGTH
-                                                           : JSOP_SPREADEVAL_LENGTH));
+        *linenop = GET_UINT32(nextpc);
         *pcOffset = pc - maybeScript->code();
         *mutedErrors = maybeScript->mutedErrors();
         return;
@@ -2965,6 +2975,12 @@ js::CloneScript(JSContext* cx, HandleObject enclosingScope, HandleFunction fun, 
                 PollutedGlobalScopeOption polluted /* = HasCleanGlobalScope */,
                 NewObjectKind newKind /* = GenericObject */)
 {
+    if (src->treatAsRunOnce() && !src->functionNonDelazifying()) {
+        // Toplevel run-once scripts may not be cloned.
+        JS_ReportError(cx, "No cloning toplevel run-once scripts");
+        return nullptr;
+    }
+
     /* NB: Keep this in sync with XDRScript. */
 
     /* Some embeddings are not careful to use ExposeObjectToActiveJS as needed. */
@@ -3089,7 +3105,6 @@ js::CloneScript(JSContext* cx, HandleObject enclosingScope, HandleFunction fun, 
 
     CompileOptions options(cx);
     options.setMutedErrors(src->mutedErrors())
-           .setCompileAndGo(src->compileAndGo())
            .setHasPollutedScope(src->hasPollutedGlobalScope() ||
                                 polluted == HasPollutedGlobalScope)
            .setSelfHostingMode(src->selfHosted())
@@ -3189,6 +3204,8 @@ js::CloneFunctionScript(JSContext* cx, HandleFunction original, HandleFunction c
     RootedScript script(cx, clone->nonLazyScript());
     MOZ_ASSERT(script);
     MOZ_ASSERT(script->compartment() == original->compartment());
+    MOZ_ASSERT(cx->compartment() == clone->compartment(),
+               "Otherwise we could relazify clone below!");
 
     // The only scripts with enclosing static scopes that may be cloned across
     // compartments are non-strict, indirect eval scripts, as their dynamic
@@ -3419,17 +3436,17 @@ JSScript::markChildren(JSTracer* trc)
 
     for (uint32_t i = 0; i < natoms(); ++i) {
         if (atoms[i])
-            MarkString(trc, &atoms[i], "atom");
+            TraceEdge(trc, &atoms[i], "atom");
     }
 
     if (hasObjects()) {
         ObjectArray* objarray = objects();
-        MarkObjectRange(trc, objarray->length, objarray->vector, "objects");
+        TraceRange(trc, objarray->length, objarray->vector, "objects");
     }
 
     if (hasRegexps()) {
         ObjectArray* objarray = regexps();
-        MarkObjectRange(trc, objarray->length, objarray->vector, "objects");
+        TraceRange(trc, objarray->length, objarray->vector, "objects");
     }
 
     if (hasConsts()) {
@@ -3439,17 +3456,17 @@ JSScript::markChildren(JSTracer* trc)
 
     if (sourceObject()) {
         MOZ_ASSERT(MaybeForwarded(sourceObject())->compartment() == compartment());
-        MarkObject(trc, &sourceObject_, "sourceObject");
+        TraceEdge(trc, &sourceObject_, "sourceObject");
     }
 
     if (functionNonDelazifying())
-        MarkObject(trc, &function_, "function");
+        TraceEdge(trc, &function_, "function");
 
     if (enclosingStaticScope_)
-        MarkObject(trc, &enclosingStaticScope_, "enclosingStaticScope");
+        TraceEdge(trc, &enclosingStaticScope_, "enclosingStaticScope");
 
     if (maybeLazyScript())
-        MarkLazyScriptUnbarriered(trc, &lazyScript, "lazyScript");
+        TraceManuallyBarrieredEdge(trc, &lazyScript, "lazyScript");
 
     if (trc->isMarkingTracer()) {
         compartment()->mark();
@@ -3467,27 +3484,27 @@ void
 LazyScript::markChildren(JSTracer* trc)
 {
     if (function_)
-        MarkObject(trc, &function_, "function");
+        TraceEdge(trc, &function_, "function");
 
     if (sourceObject_)
-        MarkObject(trc, &sourceObject_, "sourceObject");
+        TraceEdge(trc, &sourceObject_, "sourceObject");
 
     if (enclosingScope_)
-        MarkObject(trc, &enclosingScope_, "enclosingScope");
+        TraceEdge(trc, &enclosingScope_, "enclosingScope");
 
     if (script_)
-        MarkScript(trc, &script_, "realScript");
+        TraceEdge(trc, &script_, "realScript");
 
     // We rely on the fact that atoms are always tenured.
     FreeVariable* freeVariables = this->freeVariables();
     for (size_t i = 0; i < numFreeVariables(); i++) {
         JSAtom* atom = freeVariables[i].atom();
-        MarkStringUnbarriered(trc, &atom, "lazyScriptFreeVariable");
+        TraceManuallyBarrieredEdge(trc, &atom, "lazyScriptFreeVariable");
     }
 
     HeapPtrFunction* innerFunctions = this->innerFunctions();
     for (size_t i = 0; i < numInnerFunctions(); i++)
-        MarkObject(trc, &innerFunctions[i], "lazyScriptInnerFunction");
+        TraceEdge(trc, &innerFunctions[i], "lazyScriptInnerFunction");
 }
 
 void
@@ -3826,6 +3843,8 @@ LazyScript::CreateRaw(ExclusiveContext* cx, HandleFunction fun,
 
 /* static */ LazyScript*
 LazyScript::Create(ExclusiveContext* cx, HandleFunction fun,
+                   HandleScript script, HandleObject enclosingScope,
+                   HandleScript sourceObjectScript,
                    uint64_t packedFields, uint32_t begin, uint32_t end,
                    uint32_t lineno, uint32_t column)
 {
@@ -3850,6 +3869,15 @@ LazyScript::Create(ExclusiveContext* cx, HandleFunction fun,
     HeapPtrFunction* functions = res->innerFunctions();
     for (i = 0, num = res->numInnerFunctions(); i < num; i++)
         functions[i].init(dummyFun);
+
+    // Set the enclosing scope of the lazy function, this would later be
+    // used to define the environment when the function would be used.
+    MOZ_ASSERT(!res->sourceObject());
+    res->setParent(enclosingScope, &sourceObjectScript->scriptSourceUnwrap());
+
+    MOZ_ASSERT(!res->maybeScript());
+    if (script)
+        res->initScript(script);
 
     return res;
 }
@@ -3997,4 +4025,17 @@ LazyScriptHashPolicy::match(JSScript* script, const Lookup& lookup)
     size_t begin = script->sourceStart();
     size_t length = script->sourceEnd() - begin;
     return !memcmp(scriptChars + begin, lazyChars + begin, length);
+}
+
+void
+JSScript::AutoDelazify::holdScript(JS::HandleFunction fun)
+{
+    if (fun) {
+        JSAutoCompartment ac(cx_, fun);
+        script_ = fun->getOrCreateScript(cx_);
+        if (script_) {
+            oldDoNotRelazify_ = script_->doNotRelazify_;
+            script_->setDoNotRelazify(true);
+        }
+    }
 }

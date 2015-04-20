@@ -74,7 +74,8 @@ TraceDataRelocations(JSTracer* trc, uint8_t* buffer, CompactBufferReader& reader
         MOZ_ASSERT(!(*reinterpret_cast<uintptr_t*>(ptr) & 0x1));
 
         // No barrier needed since these are constants.
-        gc::MarkGCThingUnbarriered(trc, ptr, "ion-masm-ptr");
+        gc::TraceManuallyBarrieredGenericPointerEdge(trc, reinterpret_cast<gc::Cell**>(ptr),
+                                                     "ion-masm-ptr");
     }
 }
 
@@ -131,7 +132,7 @@ AssemblerX86Shared::trace(JSTracer* trc)
         RelativePatch& rp = jumps_[i];
         if (rp.kind == Relocation::JITCODE) {
             JitCode* code = JitCode::FromExecutable((uint8_t*)rp.target);
-            MarkJitCodeUnbarriered(trc, &code, "masmrel32");
+            TraceManuallyBarrieredEdge(trc, &code, "masmrel32");
             MOZ_ASSERT(code == JitCode::FromExecutable((uint8_t*)rp.target));
         }
     }
@@ -292,33 +293,4 @@ CPUInfo::SetSSEVersion()
         static const int xcr0AVXBit = 1 << 2;
         avxPresent = (xcr0EAX & xcr0SSEBit) && (xcr0EAX & xcr0AVXBit);
     }
-}
-
-const char*
-FloatRegister::name() const {
-    static const char* const names[] = {
-
-#ifdef JS_CODEGEN_X64
-#define FLOAT_REGS_(TYPE) \
-        "%xmm0" TYPE, "%xmm1" TYPE, "%xmm2" TYPE, "%xmm3" TYPE, \
-        "%xmm4" TYPE, "%xmm5" TYPE, "%xmm6" TYPE, "%xmm7" TYPE, \
-        "%xmm8" TYPE, "%xmm9" TYPE, "%xmm10" TYPE, "%xmm11" TYPE, \
-        "%xmm12" TYPE, "%xmm13" TYPE, "%xmm14" TYPE, "%xmm15" TYPE
-#else
-#define FLOAT_REGS_(TYPE) \
-        "%xmm0" TYPE, "%xmm1" TYPE, "%xmm2" TYPE, "%xmm3" TYPE, \
-        "%xmm4" TYPE, "%xmm5" TYPE, "%xmm6" TYPE, "%xmm7" TYPE
-#endif
-
-        // These should be enumerated in the same order as in
-        // FloatRegisters::ContentType.
-        FLOAT_REGS_(".s"),
-        FLOAT_REGS_(".d"),
-        FLOAT_REGS_(".i4"),
-        FLOAT_REGS_(".s4")
-#undef FLOAT_REGS_
-
-    };
-    MOZ_ASSERT(size_t(code()) < mozilla::ArrayLength(names));
-    return names[size_t(code())];
 }

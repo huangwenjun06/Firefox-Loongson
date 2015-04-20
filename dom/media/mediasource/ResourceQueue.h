@@ -41,7 +41,7 @@ namespace mozilla {
 // timepoint.
 
 struct ResourceItem {
-  explicit ResourceItem(LargeDataBuffer* aData)
+  explicit ResourceItem(MediaLargeByteBuffer* aData)
   : mData(aData)
   {
   }
@@ -56,7 +56,7 @@ struct ResourceItem {
     return size;
   }
 
-  nsRefPtr<LargeDataBuffer> mData;
+  nsRefPtr<MediaLargeByteBuffer> mData;
 };
 
 class ResourceQueueDeallocator : public nsDequeFunctor {
@@ -103,7 +103,7 @@ public:
     }
   }
 
-  void AppendItem(LargeDataBuffer* aData) {
+  void AppendItem(MediaLargeByteBuffer* aData) {
     mLogicalLength += aData->Length();
     Push(new ResourceItem(aData));
   }
@@ -129,7 +129,7 @@ public:
         uint32_t offset = aOffset - mOffset;
         mOffset += offset;
         evicted += offset;
-        nsRefPtr<LargeDataBuffer> data = new LargeDataBuffer;
+        nsRefPtr<MediaLargeByteBuffer> data = new MediaLargeByteBuffer;
         data->AppendElements(item->mData->Elements() + offset,
                              item->mData->Length() - offset);
         item->mData = data;
@@ -196,7 +196,7 @@ private:
   // no such resource exists, returns GetSize() and aOffset is
   // untouched.
   uint32_t GetAtOffset(uint64_t aOffset, uint32_t *aResourceOffset) {
-    MOZ_ASSERT(aOffset >= mOffset);
+    MOZ_RELEASE_ASSERT(aOffset >= mOffset);
     uint64_t offset = mOffset;
     for (uint32_t i = 0; i < uint32_t(GetSize()); ++i) {
       ResourceItem* item = ResourceAt(i);

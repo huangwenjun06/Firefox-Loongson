@@ -21,6 +21,7 @@
 #include "FrameLayerBuilder.h"
 #include "nsDisplayList.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/dom/KeyframeEffect.h"
 #include "RestyleManager.h"
 #include "nsRuleProcessorData.h"
 #include "nsStyleSet.h"
@@ -29,7 +30,7 @@
 
 using mozilla::layers::Layer;
 using mozilla::dom::AnimationPlayer;
-using mozilla::dom::Animation;
+using mozilla::dom::KeyframeEffectReadonly;
 
 namespace mozilla {
 
@@ -99,30 +100,45 @@ CommonAnimationManager::RemoveAllElementCollections()
 }
 
 void
-CommonAnimationManager::CheckNeedsRefresh()
+CommonAnimationManager::MaybeStartObservingRefreshDriver()
+{
+  if (mIsObservingRefreshDriver || !NeedsRefresh()) {
+    return;
+  }
+
+  mPresContext->RefreshDriver()->AddRefreshObserver(this, Flush_Style);
+  mIsObservingRefreshDriver = true;
+}
+
+void
+CommonAnimationManager::MaybeStartOrStopObservingRefreshDriver()
+{
+  bool needsRefresh = NeedsRefresh();
+  if (needsRefresh && !mIsObservingRefreshDriver) {
+    mPresContext->RefreshDriver()->AddRefreshObserver(this, Flush_Style);
+  } else if (!needsRefresh && mIsObservingRefreshDriver) {
+    mPresContext->RefreshDriver()->RemoveRefreshObserver(this, Flush_Style);
+  }
+  mIsObservingRefreshDriver = needsRefresh;
+}
+
+bool
+CommonAnimationManager::NeedsRefresh() const
 {
   for (PRCList *l = PR_LIST_HEAD(&mElementCollections);
        l != &mElementCollections;
        l = PR_NEXT_LINK(l)) {
     if (static_cast<AnimationPlayerCollection*>(l)->mNeedsRefreshes) {
-      if (!mIsObservingRefreshDriver) {
-        mPresContext->RefreshDriver()->AddRefreshObserver(this, Flush_Style);
-        mIsObservingRefreshDriver = true;
-      }
-      return;
+      return true;
     }
   }
-  if (mIsObservingRefreshDriver) {
-    mIsObservingRefreshDriver = false;
-    mPresContext->RefreshDriver()->RemoveRefreshObserver(this, Flush_Style);
-  }
+  return false;
 }
 
 AnimationPlayerCollection*
 CommonAnimationManager::GetAnimationsForCompositor(nsIContent* aContent,
-  nsIAtom* aElementProperty,
-  nsCSSProperty aProperty,
-  GetCompositorAnimationOptions aFlags)
+                                                   nsIAtom* aElementProperty,
+                                                   nsCSSProperty aProperty)
 {
   if (!aContent->MayHaveAnimations())
     return nullptr;
@@ -137,23 +153,7 @@ CommonAnimationManager::GetAnimationsForCompositor(nsIContent* aContent,
     return nullptr;
   }
 
-  if (!(aFlags & GetCompositorAnimationOptions::NotifyActiveLayerTracker)) {
-    return collection;
-  }
-
   // This animation can be done on the compositor.
-  // Mark the frame as active, in case we are able to throttle this animation.
-  nsIFrame* frame = nsLayoutUtils::GetStyleFrame(collection->mElement);
-  if (frame) {
-    const auto& info = sLayerAnimationInfo;
-    for (size_t i = 0; i < ArrayLength(info); i++) {
-      if (aProperty == info[i].mProperty) {
-        ActiveLayerTracker::NotifyAnimated(frame, aProperty);
-        break;
-      }
-    }
-  }
-
   return collection;
 }
 
@@ -282,7 +282,7 @@ void
 CommonAnimationManager::NotifyCollectionUpdated(AnimationPlayerCollection&
                                                   aCollection)
 {
-  CheckNeedsRefresh();
+  MaybeStartObservingRefreshDriver();
   mPresContext->ClearLastStyleUpdateForAllAnimations();
   mPresContext->RestyleManager()->IncrementAnimationGeneration();
   aCollection.UpdateAnimationGeneration(mPresContext);
@@ -382,21 +382,9 @@ CommonAnimationManager::GetAnimationRule(mozilla::dom::Element* aElement,
     return nullptr;
   }
 
-  // Animations should already be refreshed, but transitions may not be.
-  // Note that this is temporary, we would like both animations and transitions
-  // to both be refreshed by this point.
-  if (IsAnimationManager()) {
-    NS_WARN_IF_FALSE(!collection->mNeedsRefreshes ||
-                     collection->mStyleRuleRefreshTime ==
-                       mPresContext->RefreshDriver()->MostRecentRefresh(),
-                     "should already have refreshed style rule");
-  } else {
-    // FIXME: Remove this assignment.  See bug 1061364.
-    collection->mNeedsRefreshes = true;
-    collection->EnsureStyleRuleFor(
-      mPresContext->RefreshDriver()->MostRecentRefresh(),
-      EnsureStyleRule_IsNotThrottled);
-  }
+  collection->EnsureStyleRuleFor(
+    mPresContext->RefreshDriver()->MostRecentRefresh(),
+    EnsureStyleRule_IsNotThrottled);
 
   return collection->mStyleRule;
 }
@@ -618,12 +606,12 @@ AnimationPlayerCollection::CanPerformOnCompositorThread(
       continue;
     }
 
-    const Animation* anim = player->GetSource();
-    MOZ_ASSERT(anim, "A playing player should have a source animation");
+    const KeyframeEffectReadonly* effect = player->GetEffect();
+    MOZ_ASSERT(effect, "A playing player should have an effect");
 
-    for (size_t propIdx = 0, propEnd = anim->Properties().Length();
+    for (size_t propIdx = 0, propEnd = effect->Properties().Length();
          propIdx != propEnd; ++propIdx) {
-      if (IsGeometricProperty(anim->Properties()[propIdx].mProperty)) {
+      if (IsGeometricProperty(effect->Properties()[propIdx].mProperty)) {
         aFlags = CanAnimateFlags(aFlags | CanAnimate_HasGeometricProperty);
         break;
       }
@@ -637,14 +625,14 @@ AnimationPlayerCollection::CanPerformOnCompositorThread(
       continue;
     }
 
-    const Animation* anim = player->GetSource();
-    MOZ_ASSERT(anim, "A playing player should have a source animation");
+    const KeyframeEffectReadonly* effect = player->GetEffect();
+    MOZ_ASSERT(effect, "A playing player should have an effect");
 
-    existsProperty = existsProperty || anim->Properties().Length() > 0;
+    existsProperty = existsProperty || effect->Properties().Length() > 0;
 
-    for (size_t propIdx = 0, propEnd = anim->Properties().Length();
+    for (size_t propIdx = 0, propEnd = effect->Properties().Length();
          propIdx != propEnd; ++propIdx) {
-      const AnimationProperty& prop = anim->Properties()[propIdx];
+      const AnimationProperty& prop = effect->Properties()[propIdx];
       if (!CanAnimatePropertyOnCompositor(mElement,
                                           prop.mProperty,
                                           aFlags) ||
@@ -667,7 +655,7 @@ AnimationPlayerCollection::PostUpdateLayerAnimations()
 {
   nsCSSPropertySet propsHandled;
   for (size_t playerIdx = mPlayers.Length(); playerIdx-- != 0; ) {
-    const auto& properties = mPlayers[playerIdx]->GetSource()->Properties();
+    const auto& properties = mPlayers[playerIdx]->GetEffect()->Properties();
     for (size_t propIdx = properties.Length(); propIdx-- != 0; ) {
       nsCSSProperty prop = properties[propIdx].mProperty;
       if (nsCSSProps::PropHasFlags(prop,
@@ -691,9 +679,9 @@ AnimationPlayerCollection::HasAnimationOfProperty(
   nsCSSProperty aProperty) const
 {
   for (size_t playerIdx = mPlayers.Length(); playerIdx-- != 0; ) {
-    const Animation* anim = mPlayers[playerIdx]->GetSource();
-    if (anim && anim->HasAnimationOfProperty(aProperty) &&
-        !anim->IsFinishedTransition()) {
+    const KeyframeEffectReadonly* effect = mPlayers[playerIdx]->GetEffect();
+    if (effect && effect->HasAnimationOfProperty(aProperty) &&
+        !effect->IsFinishedTransition()) {
       return true;
     }
   }
@@ -833,7 +821,7 @@ AnimationPlayerCollection::EnsureStyleRuleFor(TimeStamp aRefreshTime,
     mPlayers[playerIdx]->ComposeStyle(mStyleRule, properties, mNeedsRefreshes);
   }
 
-  mManager->CheckNeedsRefresh();
+  mManager->MaybeStartObservingRefreshDriver();
 }
 
 bool
@@ -926,7 +914,7 @@ bool
 AnimationPlayerCollection::HasCurrentAnimations() const
 {
   for (size_t playerIdx = mPlayers.Length(); playerIdx-- != 0; ) {
-    if (mPlayers[playerIdx]->HasCurrentSource()) {
+    if (mPlayers[playerIdx]->HasCurrentEffect()) {
       return true;
     }
   }
@@ -935,15 +923,16 @@ AnimationPlayerCollection::HasCurrentAnimations() const
 }
 
 bool
-AnimationPlayerCollection::HasCurrentAnimationsForProperty(nsCSSProperty
-                                                             aProperty) const
+AnimationPlayerCollection::HasCurrentAnimationsForProperties(
+                              const nsCSSProperty* aProperties,
+                              size_t aPropertyCount) const
 {
   for (size_t playerIdx = mPlayers.Length(); playerIdx-- != 0; ) {
     const AnimationPlayer& player = *mPlayers[playerIdx];
-    const Animation* anim = player.GetSource();
-    if (anim &&
-        anim->IsCurrent(player) &&
-        anim->HasAnimationOfProperty(aProperty)) {
+    const KeyframeEffectReadonly* effect = player.GetEffect();
+    if (effect &&
+        effect->IsCurrent(player) &&
+        effect->HasAnimationOfProperties(aProperties, aPropertyCount)) {
       return true;
     }
   }

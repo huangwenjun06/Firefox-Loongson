@@ -798,8 +798,16 @@ void
 MacroAssembler::loadUnboxedProperty(T address, JSValueType type, TypedOrValueRegister output)
 {
     switch (type) {
+      case JSVAL_TYPE_INT32: {
+          // Handle loading an int32 into a double reg.
+          if (output.type() == MIRType_Double) {
+              convertInt32ToDouble(address, output.typedReg().fpu());
+              break;
+          }
+          // Fallthrough.
+      }
+
       case JSVAL_TYPE_BOOLEAN:
-      case JSVAL_TYPE_INT32:
       case JSVAL_TYPE_STRING: {
         Register outReg;
         if (output.hasValue()) {
@@ -1556,7 +1564,7 @@ void
 MacroAssembler::linkExitFrame()
 {
     AbsoluteAddress jitTop(GetJitContext()->runtime->addressOfJitTop());
-    storePtr(StackPointer, jitTop);
+    storeStackPtr(jitTop);
 }
 
 static void
@@ -1669,7 +1677,7 @@ MacroAssembler::generateBailoutTail(Register scratch, Register bailoutInfo)
             popValue(R0);
 
             // Discard exit frame.
-            addPtr(Imm32(ExitFrameLayout::SizeWithFooter()), StackPointer);
+            addToStackPtr(Imm32(ExitFrameLayout::SizeWithFooter()));
 
 #if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
             push(BaselineTailCallReg);
@@ -1707,7 +1715,7 @@ MacroAssembler::generateBailoutTail(Register scratch, Register bailoutInfo)
             popValue(R0);
 
             // Discard exit frame.
-            addPtr(Imm32(ExitFrameLayout::SizeWithFooter()), StackPointer);
+            addToStackPtr(Imm32(ExitFrameLayout::SizeWithFooter()));
 
             jump(jitcodeReg);
         }
@@ -2370,10 +2378,24 @@ MacroAssembler::branchIfNotInterpretedConstructor(Register fun, Register scratch
 
     // Common case: if IS_FUN_PROTO, ARROW and SELF_HOSTED are not set,
     // the function is an interpreted constructor and we're done.
-    Label done;
-    bits = IMM32_16ADJ( (JSFunction::IS_FUN_PROTO | JSFunction::ARROW | JSFunction::SELF_HOSTED) );
-    branchTest32(Assembler::Zero, scratch, Imm32(bits), &done);
+    Label done, moreChecks;
+
+    // Start with the easy ones. Check IS_FUN_PROTO and SELF_HOSTED.
+    bits = IMM32_16ADJ( (JSFunction::IS_FUN_PROTO | JSFunction::SELF_HOSTED) );
+    branchTest32(Assembler::NonZero, scratch, Imm32(bits), &moreChecks);
+
+    // Check !isArrow()
+    bits = IMM32_16ADJ(JSFunction::FUNCTION_KIND_MASK);
+    and32(Imm32(bits), scratch);
+
+    bits = IMM32_16ADJ(JSFunction::ARROW_KIND);
+    branch32(Assembler::NotEqual, scratch, Imm32(bits), &done);
+
+    // Reload the smashed flags and nargs for more checks.
+    load32(Address(fun, JSFunction::offsetOfNargs()), scratch);
+
     {
+        bind(&moreChecks);
         // The callee is either Function.prototype, an arrow function or
         // self-hosted. None of these are constructible, except self-hosted
         // constructors, so branch to |label| if SELF_HOSTED_CTOR is not set.
@@ -2483,15 +2505,15 @@ MacroAssembler::alignJitStackBasedOnNArgs(Register nargs)
 #endif
     assertStackAlignment(sizeof(Value), 0);
     branchTestPtr(Assembler::NonZero, nargs, Imm32(1), &odd);
-    branchTestPtr(Assembler::NonZero, StackPointer, Imm32(JitStackAlignment - 1), maybeAssert);
-    subPtr(Imm32(sizeof(Value)), StackPointer);
+    branchTestStackPtr(Assembler::NonZero, Imm32(JitStackAlignment - 1), maybeAssert);
+    subFromStackPtr(Imm32(sizeof(Value)));
 #ifdef DEBUG
     bind(&assert);
 #endif
     assertStackAlignment(JitStackAlignment, sizeof(Value));
     jump(&end);
     bind(&odd);
-    andPtr(Imm32(~(JitStackAlignment - 1)), StackPointer);
+    andToStackPtr(Imm32(~(JitStackAlignment - 1)));
     bind(&end);
 }
 
@@ -2519,12 +2541,12 @@ MacroAssembler::alignJitStackBasedOnNArgs(uint32_t nargs)
     assertStackAlignment(sizeof(Value), 0);
     if (nargs % 2 == 0) {
         Label end;
-        branchTestPtr(Assembler::NonZero, StackPointer, Imm32(JitStackAlignment - 1), &end);
-        subPtr(Imm32(sizeof(Value)), StackPointer);
+        branchTestStackPtr(Assembler::NonZero, Imm32(JitStackAlignment - 1), &end);
+        subFromStackPtr(Imm32(sizeof(Value)));
         bind(&end);
         assertStackAlignment(JitStackAlignment, sizeof(Value));
     } else {
-        andPtr(Imm32(~(JitStackAlignment - 1)), StackPointer);
+        andToStackPtr(Imm32(~(JitStackAlignment - 1)));
     }
 }
 

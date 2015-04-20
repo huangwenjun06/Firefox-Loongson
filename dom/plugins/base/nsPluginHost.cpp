@@ -91,6 +91,7 @@
 #include "nsIImageLoadingContent.h"
 #include "mozilla/Preferences.h"
 #include "nsVersionComparator.h"
+#include "nsNullPrincipal.h"
 
 #if defined(XP_WIN)
 #include "nsIWindowMediator.h"
@@ -3117,8 +3118,8 @@ nsresult nsPluginHost::NewPluginURLStream(const nsString& aURL,
     // in this else branch we really don't know where the load is coming
     // from and in fact should use something better than just using
     // a nullPrincipal as the loadingPrincipal.
-    principal = do_CreateInstance("@mozilla.org/nullprincipal;1", &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
+    principal = nsNullPrincipal::Create();
+    NS_ENSURE_TRUE(principal, NS_ERROR_FAILURE);
     rv = NS_NewChannel(getter_AddRefs(channel),
                        url,
                        principal,
@@ -3773,6 +3774,7 @@ nsPluginHost::PluginCrashed(nsNPAPIPlugin* aPlugin,
                             const nsAString& browserDumpID)
 {
   nsPluginTag* crashedPluginTag = TagForPlugin(aPlugin);
+  MOZ_ASSERT(crashedPluginTag);
 
   // Notify the app's observer that a plugin crashed so it can submit
   // a crashreport.
@@ -3782,6 +3784,18 @@ nsPluginHost::PluginCrashed(nsNPAPIPlugin* aPlugin,
   nsCOMPtr<nsIWritablePropertyBag2> propbag =
     do_CreateInstance("@mozilla.org/hash-property-bag;1");
   if (obsService && propbag) {
+    uint32_t runID = 0;
+    PluginLibrary* library = aPlugin->GetLibrary();
+
+    if (!NS_WARN_IF(!library)) {
+      library->GetRunID(&runID);
+    }
+    propbag->SetPropertyAsUint32(NS_LITERAL_STRING("runID"), runID);
+
+    nsCString pluginName;
+    crashedPluginTag->GetName(pluginName);
+    propbag->SetPropertyAsAString(NS_LITERAL_STRING("pluginName"),
+                                   NS_ConvertUTF8toUTF16(pluginName));
     propbag->SetPropertyAsAString(NS_LITERAL_STRING("pluginDumpID"),
                                   pluginDumpID);
     propbag->SetPropertyAsAString(NS_LITERAL_STRING("browserDumpID"),

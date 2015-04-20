@@ -1929,9 +1929,13 @@ nsFocusManager::Focus(nsPIDOMWindow* aWindow,
       }
     }
 
-    nsPresContext* presContext = presShell->GetPresContext();
-    IMEStateManager::OnChangeFocus(presContext, nullptr,
-                                   GetFocusMoveActionCause(aFlags));
+    if (!mFocusedContent) {
+      // When there is no focused content, IMEStateManager needs to adjust IME
+      // enabled state with the document.
+      nsPresContext* presContext = presShell->GetPresContext();
+      IMEStateManager::OnChangeFocus(presContext, nullptr,
+                                     GetFocusMoveActionCause(aFlags));
+    }
 
     if (!aWindowRaised)
       aWindow->UpdateCommands(NS_LITERAL_STRING("focus"), nullptr, 0);
@@ -2633,8 +2637,9 @@ nsFocusManager::DetermineElementToMoveFocus(nsPIDOMWindow* aWindow,
 
         // as long as the found node was not the same as the starting node,
         // set it as the return value.
-        if (nextFocus != originalStartContent)
-          NS_ADDREF(*aNextContent = nextFocus);
+        if (nextFocus != originalStartContent) {
+          nextFocus.forget(aNextContent);
+        }
         return NS_OK;
       }
 
@@ -3116,8 +3121,7 @@ nsFocusManager::GetLastDocShell(nsIDocShellTreeItem* aItem,
     int32_t childCount = 0;
     curItem->GetChildCount(&childCount);
     if (!childCount) {
-      *aResult = curItem;
-      NS_ADDREF(*aResult);
+      curItem.forget(aResult);
       return;
     }
 
@@ -3195,7 +3199,7 @@ nsFocusManager::GetPreviousDocShell(nsIDocShellTreeItem* aItem,
   if (prevItem)
     GetLastDocShell(prevItem, aResult);
   else
-    NS_ADDREF(*aResult = parentItem);
+    parentItem.forget(aResult);
 }
 
 nsIContent*
@@ -3413,7 +3417,7 @@ nsFocusManager::GetFocusInSelection(nsPIDOMWindow* aWindow,
     nsCOMPtr<nsIURI> uri;
     if (testContent == currentFocus ||
         testContent->IsLink(getter_AddRefs(uri))) {
-      NS_ADDREF(*aFocusedContent = testContent);
+      testContent.forget(aFocusedContent);
       return;
     }
 
@@ -3443,7 +3447,7 @@ nsFocusManager::GetFocusInSelection(nsPIDOMWindow* aWindow,
     nsCOMPtr<nsIURI> uri;
     if (testContent == currentFocus ||
         testContent->IsLink(getter_AddRefs(uri))) {
-      NS_ADDREF(*aFocusedContent = testContent);
+      testContent.forget(aFocusedContent);
       return;
     }
 

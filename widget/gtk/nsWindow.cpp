@@ -2383,7 +2383,7 @@ nsWindow::UpdateAlpha(gfxPattern* aPattern, nsIntRect aBoundsRect)
     int32_t bufferSize = stride * aBoundsRect.height;
     nsAutoArrayPtr<uint8_t> imageBuffer(new (std::nothrow) uint8_t[bufferSize]);
     RefPtr<DrawTarget> drawTarget = gfxPlatform::GetPlatform()->
-        CreateDrawTargetForData(imageBuffer, ToIntSize(aBoundsRect.Size()),
+        CreateDrawTargetForData(imageBuffer, aBoundsRect.Size(),
                                 stride, SurfaceFormat::A8);
 
     if (drawTarget) {
@@ -6555,8 +6555,11 @@ nsWindow::GdkRectToDevicePixels(GdkRectangle rect) {
 nsresult
 nsWindow::SynthesizeNativeMouseEvent(LayoutDeviceIntPoint aPoint,
                                      uint32_t aNativeMessage,
-                                     uint32_t aModifierFlags)
+                                     uint32_t aModifierFlags,
+                                     nsIObserver* aObserver)
 {
+  AutoObserverNotifier notifier(aObserver, "mouseevent");
+
   if (!mGdkWindow) {
     return NS_OK;
   }

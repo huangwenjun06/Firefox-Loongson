@@ -934,7 +934,10 @@ nsHttpChannel::CallOnStartRequest()
 
     LOG(("  calling mListener->OnStartRequest\n"));
     if (mListener) {
+        MOZ_ASSERT(!mOnStartRequestCalled,
+                   "We should not call OsStartRequest twice");
         rv = mListener->OnStartRequest(this, mListenerContext);
+        mOnStartRequestCalled = true;
         if (NS_FAILED(rv))
             return rv;
     } else {
@@ -1259,6 +1262,10 @@ nsHttpChannel::ProcessAltService()
     // alternative   = protocol-id "=" alt-authority
     // protocol-id   = token ; percent-encoded ALPN protocol identifier
     // alt-authority = quoted-string ;  containing [ uri-host ] ":" port
+
+    if (!mAllowAltSvc) { // per channel opt out
+        return;
+    }
 
     if (!gHttpHandler->AllowAltSvc() || (mCaps & NS_HTTP_DISALLOW_SPDY)) {
         return;
@@ -4821,14 +4828,16 @@ nsHttpChannel::BeginConnect()
     mRequestHead.SetOrigin(scheme, host, port);
 
     nsRefPtr<AltSvcMapping> mapping;
-    if ((scheme.Equals(NS_LITERAL_CSTRING("http")) ||
+    if (mAllowAltSvc && // per channel
+        (scheme.Equals(NS_LITERAL_CSTRING("http")) ||
          scheme.Equals(NS_LITERAL_CSTRING("https"))) &&
+        (!proxyInfo || proxyInfo->IsDirect()) &&
         (mapping = gHttpHandler->GetAltServiceMapping(scheme,
                                                       host, port,
                                                       mPrivateBrowsing))) {
-        LOG(("nsHttpChannel %p Alt Service Mapping Found %s://%s:%d\n", this,
-             scheme.get(), mapping->AlternateHost().get(),
-             mapping->AlternatePort()));
+        LOG(("nsHttpChannel %p Alt Service Mapping Found %s://%s:%d [%s]\n",
+             this, scheme.get(), mapping->AlternateHost().get(),
+             mapping->AlternatePort(), mapping->HashKey().get()));
 
         if (!(mLoadFlags & LOAD_ANONYMOUS) && !mPrivateBrowsing) {
             nsAutoCString altUsedLine(mapping->AlternateHost());
@@ -4867,6 +4876,12 @@ nsHttpChannel::BeginConnect()
         LOG(("nsHttpChannel %p Using default connection info", this));
         mConnectionInfo = new nsHttpConnectionInfo(host, port, EmptyCString(), mUsername, proxyInfo, isHttps);
         Telemetry::Accumulate(Telemetry::HTTP_TRANSACTION_USE_ALTSVC, false);
+    }
+
+    // Set network interface id only when it's not empty to avoid
+    // rebuilding hash key.
+    if (!mNetworkInterfaceId.IsEmpty()) {
+        mConnectionInfo->SetNetworkInterfaceId(mNetworkInterfaceId);
     }
 
     mAuthProvider =
@@ -4973,6 +4988,7 @@ nsHttpChannel::BeginConnect()
     if (mLoadFlags & LOAD_FRESH_CONNECTION) {
         // just the initial document resets the whole pool
         if (mLoadFlags & LOAD_INITIAL_DOCUMENT_URI) {
+            gHttpHandler->ConnMgr()->ClearAltServiceMappings();
             gHttpHandler->ConnMgr()->DoShiftReloadConnectionCleanup(mConnectionInfo);
         }
         mCaps &= ~NS_HTTP_ALLOW_PIPELINING;
@@ -5519,7 +5535,10 @@ nsHttpChannel::OnStopRequest(nsIRequest *request, nsISupports *ctxt, nsresult st
             // NOTE: since we have a failure status, we can ignore the return
             // value from onStartRequest.
             if (mListener) {
+                MOZ_ASSERT(!mOnStartRequestCalled,
+                           "We should not call OnStartRequest twice.");
                 mListener->OnStartRequest(this, mListenerContext);
+                mOnStartRequestCalled = true;
             } else {
                 NS_WARNING("OnStartRequest skipped because of null listener");
             }

@@ -32,6 +32,7 @@ using mozilla::unused;
 #include "nsFocusManager.h"
 #include "nsIWidgetListener.h"
 #include "nsViewManager.h"
+#include "nsISelection.h"
 
 #include "nsIDOMSimpleGestureEvent.h"
 
@@ -178,7 +179,6 @@ nsWindow::nsWindow() :
     mParent(nullptr),
     mFocus(nullptr),
     mIMEMaskSelectionUpdate(false),
-    mIMEMaskTextUpdate(false),
     mIMEMaskEventsCount(1), // Mask IME events since there's no focus yet
     mIMERanges(new TextRangeArray()),
     mIMEUpdatingContext(false),
@@ -868,7 +868,11 @@ nsWindow::OnGlobalAndroidEvent(AndroidGeckoEvent *ae)
             nsWindow *target = win->FindWindowForPoint(pt);
             if (target) {
                 // Send the contextmenu event to Gecko.
-                target->OnContextmenuEvent(ae);
+                if (!target->OnContextmenuEvent(ae)) {
+                    // If not consumed, continue as a LongTap, possibly trigger
+                    // Gecko Text Selection Carets.
+                    target->OnLongTapEvent(ae);
+                }
             }
             break;
         }
@@ -1008,7 +1012,7 @@ nsWindow::OnMouseEvent(AndroidGeckoEvent *ae)
     DispatchEvent(&event);
 }
 
-void
+bool
 nsWindow::OnContextmenuEvent(AndroidGeckoEvent *ae)
 {
     nsRefPtr<nsWindow> kungFuDeathGrip(this);
@@ -1037,7 +1041,35 @@ nsWindow::OnContextmenuEvent(AndroidGeckoEvent *ae)
         WidgetTouchEvent canceltouchEvent = ae->MakeTouchEvent(this);
         canceltouchEvent.message = NS_TOUCH_CANCEL;
         DispatchEvent(&canceltouchEvent);
+        return true;
     }
+
+    return false;
+}
+
+void
+nsWindow::OnLongTapEvent(AndroidGeckoEvent *ae)
+{
+    nsRefPtr<nsWindow> kungFuDeathGrip(this);
+
+    CSSPoint pt;
+    const nsTArray<nsIntPoint>& points = ae->Points();
+    if (points.Length() > 0) {
+        pt = CSSPoint(points[0].x, points[0].y);
+    }
+
+    // Send the LongTap event to Gecko.
+    WidgetMouseEvent event(true, NS_MOUSE_MOZLONGTAP, this,
+        WidgetMouseEvent::eReal, WidgetMouseEvent::eNormal);
+    event.button = WidgetMouseEvent::eLeftButton;
+    event.refPoint =
+        RoundedToInt(pt * GetDefaultScale()) - WidgetToScreenOffset();
+    event.clickCount = 1;
+    event.time = ae->Time();
+    event.inputSource = nsIDOMMouseEvent::MOZ_SOURCE_TOUCH;
+    event.ignoreRootScrollFrame = true;
+
+    DispatchEvent(&event);
 }
 
 bool nsWindow::OnMultitouchEvent(AndroidGeckoEvent *ae)
@@ -1692,7 +1724,6 @@ nsWindow::RemoveIMEComposition()
 
     nsRefPtr<nsWindow> kungFuDeathGrip(this);
     AutoIMEMask selMask(mIMEMaskSelectionUpdate);
-    AutoIMEMask textMask(mIMEMaskTextUpdate);
 
     WidgetCompositionEvent compositionCommitEvent(true,
                                                   NS_COMPOSITION_COMMIT_AS_IS,
@@ -1704,7 +1735,6 @@ nsWindow::RemoveIMEComposition()
 void
 nsWindow::OnIMEEvent(AndroidGeckoEvent *ae)
 {
-    MOZ_ASSERT(!mIMEMaskTextUpdate);
     MOZ_ASSERT(!mIMEMaskSelectionUpdate);
     /*
         Rules for managing IME between Gecko and Java:
@@ -1781,9 +1811,6 @@ nsWindow::OnIMEEvent(AndroidGeckoEvent *ae)
 
                 Selection updates are masked so the result of our temporary
                   selection event is not passed on to Java
-
-                Text updates are passed on, so the Java text can shadow the
-                  Gecko text
             */
             AutoIMEMask selMask(mIMEMaskSelectionUpdate);
             const auto composition(GetIMEComposition());
@@ -1932,11 +1959,10 @@ nsWindow::OnIMEEvent(AndroidGeckoEvent *ae)
                   to eliminate the possibility of this event altering the
                   text content unintentionally.
 
-                Selection and text updates are masked so the result of
+                Selection updates are masked so the result of
                   temporary events are not passed on to Java
             */
             AutoIMEMask selMask(mIMEMaskSelectionUpdate);
-            AutoIMEMask textMask(mIMEMaskTextUpdate);
             const auto composition(GetIMEComposition());
             MOZ_ASSERT(!composition || !composition->IsEditorHandlingEvent());
 
@@ -2006,11 +2032,10 @@ nsWindow::OnIMEEvent(AndroidGeckoEvent *ae)
              *  Remove any previous composition.  This is only used for
              *    visual indication and does not affect the text content.
              *
-             *  Selection and text updates are masked so the result of
+             *  Selection updates are masked so the result of
              *    temporary events are not passed on to Java
              */
             AutoIMEMask selMask(mIMEMaskSelectionUpdate);
-            AutoIMEMask textMask(mIMEMaskTextUpdate);
             RemoveIMEComposition();
             mIMERanges->Clear();
         }
@@ -2197,7 +2222,19 @@ nsWindow::PostFlushIMEChanges()
 void
 nsWindow::FlushIMEChanges()
 {
+    // Only send change notifications if we are *not* masking events,
+    // i.e. if we have a focused editor,
+    NS_ENSURE_TRUE_VOID(!mIMEMaskEventsCount);
+
+    nsCOMPtr<nsISelection> imeSelection;
+    nsCOMPtr<nsIContent> imeRoot;
+
+    // If we are receiving notifications, we must have selection/root content.
+    MOZ_ALWAYS_TRUE(NS_SUCCEEDED(IMEStateManager::GetFocusSelectionAndRoot(
+            getter_AddRefs(imeSelection), getter_AddRefs(imeRoot))));
+
     nsRefPtr<nsWindow> kungFuDeathGrip(this);
+
     for (uint32_t i = 0; i < mIMETextChanges.Length(); i++) {
         IMEChange &change = mIMETextChanges[i];
 
@@ -2213,8 +2250,8 @@ nsWindow::FlushIMEChanges()
             event.InitForQueryTextContent(change.mStart,
                                           change.mNewEnd - change.mStart);
             DispatchEvent(&event);
-            if (!event.mSucceeded)
-                return;
+            NS_ENSURE_TRUE_VOID(event.mSucceeded);
+            NS_ENSURE_TRUE_VOID(event.mReply.mContentsRoot == imeRoot.get());
         }
 
         GeckoAppShell::NotifyIMEChange(event.mReply.mString, change.mStart,
@@ -2227,8 +2264,8 @@ nsWindow::FlushIMEChanges()
         InitEvent(event, nullptr);
 
         DispatchEvent(&event);
-        if (!event.mSucceeded)
-            return;
+        NS_ENSURE_TRUE_VOID(event.mSucceeded);
+        NS_ENSURE_TRUE_VOID(event.mReply.mContentsRoot == imeRoot.get());
 
         GeckoAppShell::NotifyIMEChange(EmptyString(),
                                        int32_t(event.GetSelectionStart()),
@@ -2242,9 +2279,6 @@ nsWindow::NotifyIMEOfTextChange(const IMENotification& aIMENotification)
 {
     MOZ_ASSERT(aIMENotification.mMessage == NOTIFY_IME_OF_TEXT_CHANGE,
                "NotifyIMEOfTextChange() is called with invaild notification");
-
-    if (mIMEMaskTextUpdate)
-        return NS_OK;
 
     ALOGIME("IME: NotifyIMEOfTextChange: s=%d, oe=%d, ne=%d",
             aIMENotification.mTextChangeData.mStartOffset,
@@ -2417,6 +2451,29 @@ nsWindow::ScheduleComposite()
 {
     if (sCompositorParent) {
         sCompositorParent->ScheduleRenderOnCompositorThread();
+    }
+}
+
+bool
+nsWindow::IsCompositionPaused()
+{
+    return sCompositorPaused;
+}
+
+void
+nsWindow::SchedulePauseComposition()
+{
+    if (sCompositorParent) {
+        sCompositorParent->SchedulePauseOnCompositorThread();
+        sCompositorPaused = true;
+    }
+}
+
+void
+nsWindow::ScheduleResumeComposition()
+{
+    if (sCompositorParent && sCompositorParent->ScheduleResumeOnCompositorThread()) {
+        sCompositorPaused = false;
     }
 }
 

@@ -70,6 +70,7 @@
 
 #include "AudioChannelService.h"
 #include "mozilla/dom/DataStoreService.h"
+#include "mozilla/dom/PromiseDebugging.h"
 
 #ifdef MOZ_XUL
 #include "nsXULPopupManager.h"
@@ -137,6 +138,7 @@ using namespace mozilla::system;
 #include "mozilla/dom/HTMLVideoElement.h"
 #include "CameraPreferences.h"
 #include "TouchManager.h"
+#include "MediaDecoder.h"
 
 using namespace mozilla;
 using namespace mozilla::net;
@@ -314,6 +316,10 @@ nsLayoutStatics::Initialize()
   mozilla::css::CommonAnimationManager::Initialize();
 #endif
 
+  MediaDecoder::InitStatics();
+
+  PromiseDebugging::Init();
+
   return NS_OK;
 }
 
@@ -447,4 +453,6 @@ nsLayoutStatics::Shutdown()
   CacheObserver::Shutdown();
 
   CameraPreferences::Shutdown();
+
+  PromiseDebugging::Shutdown();
 }

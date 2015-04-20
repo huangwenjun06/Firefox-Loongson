@@ -27,9 +27,6 @@ PRLogModuleInfo* GetAppleMediaLog() {
 
 namespace mozilla {
 
-// This defines the resolution height over which VDA will be prefered.
-#define VDA_RESOLUTION_THRESHOLD 720
-
 bool AppleDecoderModule::sInitialized = false;
 bool AppleDecoderModule::sIsVTAvailable = false;
 bool AppleDecoderModule::sIsVTHWAvailable = false;
@@ -152,7 +149,7 @@ AppleDecoderModule::Startup()
 }
 
 already_AddRefed<MediaDataDecoder>
-AppleDecoderModule::CreateVideoDecoder(const mp4_demuxer::VideoDecoderConfig& aConfig,
+AppleDecoderModule::CreateVideoDecoder(const VideoInfo& aConfig,
                                        layers::LayersBackend aLayersBackend,
                                        layers::ImageContainer* aImageContainer,
                                        FlushableMediaTaskQueue* aVideoTaskQueue,
@@ -160,9 +157,7 @@ AppleDecoderModule::CreateVideoDecoder(const mp4_demuxer::VideoDecoderConfig& aC
 {
   nsRefPtr<MediaDataDecoder> decoder;
 
-  if (sIsVDAAvailable &&
-      (!sIsVTHWAvailable || sForceVDA ||
-       aConfig.image_height >= VDA_RESOLUTION_THRESHOLD)) {
+  if (sIsVDAAvailable && (!sIsVTHWAvailable || sForceVDA)) {
     decoder =
       AppleVDADecoder::CreateVDADecoder(aConfig,
                                         aVideoTaskQueue,
@@ -182,7 +177,7 @@ AppleDecoderModule::CreateVideoDecoder(const mp4_demuxer::VideoDecoderConfig& aC
 }
 
 already_AddRefed<MediaDataDecoder>
-AppleDecoderModule::CreateAudioDecoder(const mp4_demuxer::AudioDecoderConfig& aConfig,
+AppleDecoderModule::CreateAudioDecoder(const AudioInfo& aConfig,
                                        FlushableMediaTaskQueue* aAudioTaskQueue,
                                        MediaDataDecoderCallback* aCallback)
 {
@@ -192,15 +187,20 @@ AppleDecoderModule::CreateAudioDecoder(const mp4_demuxer::AudioDecoderConfig& aC
 }
 
 bool
-AppleDecoderModule::SupportsAudioMimeType(const nsACString& aMimeType)
+AppleDecoderModule::SupportsMimeType(const nsACString& aMimeType)
 {
-  return aMimeType.EqualsLiteral("audio/mp4a-latm") || aMimeType.EqualsLiteral("audio/mpeg");
+  return aMimeType.EqualsLiteral("audio/mpeg") ||
+    PlatformDecoderModule::SupportsMimeType(aMimeType);
 }
 
-bool
-AppleDecoderModule::DecoderNeedsAVCC(const mp4_demuxer::VideoDecoderConfig& aConfig)
+PlatformDecoderModule::ConversionRequired
+AppleDecoderModule::DecoderNeedsConversion(const TrackInfo& aConfig) const
 {
-  return true;
+  if (aConfig.IsVideo()) {
+    return kNeedAVCC;
+  } else {
+    return kNeedNone;
+  }
 }
 
 } // namespace mozilla

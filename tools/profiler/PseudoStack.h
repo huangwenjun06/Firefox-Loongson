@@ -111,24 +111,6 @@ private:
   uint32_t mGenID;
 };
 
-// Foward declaration
-typedef struct _UnwinderThreadBuffer UnwinderThreadBuffer;
-
-/**
- * This struct is used to add a mNext field to UnwinderThreadBuffer objects for
- * use with ProfilerLinkedList. It is done this way so that UnwinderThreadBuffer
- * may continue to be opaque with respect to code outside of UnwinderThread2.cpp
- */
-struct LinkedUWTBuffer
-{
-  LinkedUWTBuffer()
-    :mNext(nullptr)
-  {}
-  virtual ~LinkedUWTBuffer() {}
-  virtual UnwinderThreadBuffer* GetBuffer() = 0;
-  LinkedUWTBuffer*  mNext;
-};
-
 template<typename T>
 class ProfilerLinkedList {
 public:
@@ -176,7 +158,6 @@ private:
 };
 
 typedef ProfilerLinkedList<ProfilerMarker> ProfilerMarkerLinkedList;
-typedef ProfilerLinkedList<LinkedUWTBuffer> UWTBufferLinkedList;
 
 template<typename T>
 class ProfilerSignalSafeLinkedList {
@@ -255,16 +236,6 @@ public:
     // This is needed to cause an initial sample to be taken from sleeping threads. Otherwise sleeping
     // threads would not have any samples to copy forward while sleeping.
     mSleepId++;
-  }
-
-  void addLinkedUWTBuffer(LinkedUWTBuffer* aBuff)
-  {
-    mPendingUWTBuffers.insert(aBuff);
-  }
-
-  UWTBufferLinkedList* getLinkedUWTBuffers()
-  {
-    return mPendingUWTBuffers.accessList();
   }
 
   void addMarker(const char *aMarkerStr, ProfilerMarkerPayload *aPayload, float aTime)
@@ -351,10 +322,16 @@ public:
     return sMin(mStackPointer, mozilla::sig_safe_t(mozilla::ArrayLength(mStack)));
   }
 
-  void sampleRuntime(JSRuntime *runtime) {
+  void sampleRuntime(JSRuntime* runtime) {
+    if (mRuntime && !runtime) {
+      // On JS shut down, flush the current buffer as stringifying JIT samples
+      // requires a live JSRuntime.
+      flushSamplerOnJSShutdown();
+    }
+
     mRuntime = runtime;
+
     if (!runtime) {
-      // JS shut down
       return;
     }
 
@@ -363,7 +340,7 @@ public:
     js::SetRuntimeProfilingStack(runtime,
                                  (js::ProfileEntry*) mStack,
                                  (uint32_t*) &mStackPointer,
-                                 uint32_t(mozilla::ArrayLength(mStack)));
+                                 (uint32_t) mozilla::ArrayLength(mStack));
     if (mStartJSSampling)
       enableJSSampling();
   }
@@ -417,11 +394,11 @@ public:
   PseudoStack(const PseudoStack&) = delete;
   void operator=(const PseudoStack&) = delete;
 
+  void flushSamplerOnJSShutdown();
+
   // Keep a list of pending markers that must be moved
   // to the circular buffer
   ProfilerSignalSafeLinkedList<ProfilerMarker> mPendingMarkers;
-  // List of LinkedUWTBuffers that must be processed on the next tick
-  ProfilerSignalSafeLinkedList<LinkedUWTBuffer> mPendingUWTBuffers;
   // This may exceed the length of mStack, so instead use the stackSize() method
   // to determine the number of valid samples in mStack
   mozilla::sig_safe_t mStackPointer;

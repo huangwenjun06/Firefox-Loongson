@@ -817,6 +817,16 @@ HandleDynamicLinkFailure(JSContext* cx, CallArgs args, AsmJSModule& module, Hand
     if (cx->isExceptionPending())
         return false;
 
+    // Source discarding is allowed to affect JS semantics because it is never
+    // enabled for normal JS content.
+    bool haveSource = module.scriptSource()->hasSourceData();
+    if (!haveSource && !JSScript::loadSource(cx, module.scriptSource(), &haveSource))
+        return false;
+    if (!haveSource) {
+        JS_ReportError(cx, "asm.js link failure with source discarding enabled");
+        return false;
+    }
+
     uint32_t begin = module.srcBodyStart();  // starts right after 'use asm'
     uint32_t end = module.srcEndBeforeCurly();
     Rooted<JSFlatString*> src(cx, module.scriptSource()->substringDontDeflate(cx, begin, end));
@@ -843,7 +853,6 @@ HandleDynamicLinkFailure(JSContext* cx, CallArgs args, AsmJSModule& module, Hand
     CompileOptions options(cx);
     options.setMutedErrors(module.scriptSource()->mutedErrors())
            .setFile(module.scriptSource()->filename())
-           .setCompileAndGo(false)
            .setNoScriptRval(false);
 
     // The exported function inherits an implicit strict context if the module

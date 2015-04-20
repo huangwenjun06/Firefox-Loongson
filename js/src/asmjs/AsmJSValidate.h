@@ -52,7 +52,11 @@ ValidateAsmJS(ExclusiveContext* cx, AsmJSParser& parser, frontend::ParseNode* st
              bool* validated);
 
 // The assumed page size; dynamically checked in ValidateAsmJS.
+#ifdef _MIPS_ARCH_LOONGSON3A
+const size_t AsmJSPageSize = 16384;
+#else
 const size_t AsmJSPageSize = 4096;
+#endif
 
 #if defined(ASMJS_MAY_USE_SIGNAL_HANDLERS_FOR_OOB)
 

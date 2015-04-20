@@ -10,9 +10,9 @@
 #include "prprf.h"
 #include "CertVerifier.h"
 #include "ExtendedValidation.h"
+#include "mozilla/UniquePtr.h"
 #include "pkix/pkixnss.h"
 #include "pkix/pkixtypes.h"
-#include "pkix/ScopedPtr.h"
 #include "nsNSSComponent.h" // for PIPNSS string bundle calls.
 #include "nsCOMPtr.h"
 #include "nsIMutableArray.h"
@@ -534,8 +534,8 @@ nsNSSCertificate::GetWindowTitle(nsAString& aWindowTitle)
     return NS_ERROR_FAILURE;
   }
 
-  mozilla::pkix::ScopedPtr<char, mozilla::psm::PORT_Free_string>
-    commonName(CERT_GetCommonName(&mCert->subject));
+  UniquePtr<char, void(&)(void*)>
+    commonName(CERT_GetCommonName(&mCert->subject), PORT_Free);
 
   const char* titleOptions[] = {
     mCert->nickname,
@@ -1626,8 +1626,17 @@ nsNSSCertList::DupCertList(CERTCertList* aCertList,
 void*
 nsNSSCertList::GetRawCertList()
 {
-  // This function should only be called after adquiring a
-  // nsNSSShutDownPreventionLock
+  // This function should only be called after acquiring a
+  // nsNSSShutDownPreventionLock. It's difficult to enforce this in code since
+  // this is an implementation of an XPCOM interface function (albeit a
+  // C++-only one), so we acquire the (reentrant) lock and check for shutdown
+  // ourselves here. At the moment it appears that only nsCertTree uses this
+  // function. When that gets removed and replaced by a more reasonable
+  // implementation of the certificate manager, this function can be removed.
+  nsNSSShutDownPreventionLock locker;
+  if (isAlreadyShutDown()) {
+    return nullptr;
+  }
   return mCertList.get();
 }
 

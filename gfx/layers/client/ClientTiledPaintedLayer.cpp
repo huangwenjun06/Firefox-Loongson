@@ -258,17 +258,15 @@ ClientTiledPaintedLayer::UseProgressiveDraw() {
     return false;
   }
 
-  // XXX We probably want to disable progressive drawing for non active APZ layers in the future
-  //     but we should wait for a proper test case before making this change.
-#if 0 //!defined(MOZ_WIDGET_ANDROID) || defined(MOZ_ANDROID_APZ)
-  LayerMetricsWrapper scrollAncestor;
-  GetAncestorLayers(&scrollAncestor, nullptr, nullptr);
-  MOZ_ASSERT(scrollAncestor); // because mPaintData.mCriticalDisplayPort is non-empty
-  const FrameMetrics& parentMetrics = scrollAncestor.Metrics();
-  if (!IsScrollingOnCompositor(parentMetrics)) {
-    return false;
+  if (gfxPrefs::AsyncPanZoomEnabled()) {
+    LayerMetricsWrapper scrollAncestor;
+    GetAncestorLayers(&scrollAncestor, nullptr, nullptr);
+    MOZ_ASSERT(scrollAncestor); // because mPaintData.mCriticalDisplayPort is non-empty
+    const FrameMetrics& parentMetrics = scrollAncestor.Metrics();
+    if (!IsScrollingOnCompositor(parentMetrics)) {
+      return false;
+    }
   }
-#endif
 
   return true;
 }
@@ -428,7 +426,7 @@ ClientTiledPaintedLayer::RenderLayer()
     // we always have valid content or transparent pixels to sample from.
     nsIntRect bounds = neededRegion.GetBounds();
     nsIntRect wholeTiles = bounds;
-    wholeTiles.Inflate(nsIntSize(
+    wholeTiles.InflateToMultiple(nsIntSize(
       gfxPlatform::GetPlatform()->GetTileWidth(),
       gfxPlatform::GetPlatform()->GetTileHeight()));
     nsIntRect padded = bounds;

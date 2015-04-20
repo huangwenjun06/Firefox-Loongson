@@ -55,7 +55,7 @@ typedef InfallibleTArray<AnimationEventInfo> EventArray;
 class CSSAnimationPlayer final : public dom::AnimationPlayer
 {
 public:
- explicit CSSAnimationPlayer(dom::AnimationTimeline* aTimeline)
+ explicit CSSAnimationPlayer(dom::DocumentTimeline* aTimeline)
     : dom::AnimationPlayer(aTimeline)
     , mIsStylePaused(false)
     , mPauseShouldStick(false)
@@ -166,12 +166,10 @@ public:
   }
 
   static mozilla::AnimationPlayerCollection*
-  GetAnimationsForCompositor(nsIContent* aContent, nsCSSProperty aProperty,
-                             mozilla::GetCompositorAnimationOptions aFlags
-                               = mozilla::GetCompositorAnimationOptions(0))
+  GetAnimationsForCompositor(nsIContent* aContent, nsCSSProperty aProperty)
   {
     return mozilla::css::CommonAnimationManager::GetAnimationsForCompositor(
-      aContent, nsGkAtoms::animationsProperty, aProperty, aFlags);
+      aContent, nsGkAtoms::animationsProperty, aProperty);
   }
 
   void UpdateStyleAndEvents(mozilla::AnimationPlayerCollection* aEA,
@@ -239,7 +237,7 @@ protected:
 private:
   void BuildAnimations(nsStyleContext* aStyleContext,
                        mozilla::dom::Element* aTarget,
-                       mozilla::dom::AnimationTimeline* aTimeline,
+                       mozilla::dom::DocumentTimeline* aTimeline,
                        mozilla::AnimationPlayerPtrArray& aAnimations);
   bool BuildSegment(InfallibleTArray<mozilla::AnimationPropertySegment>&
                       aSegments,

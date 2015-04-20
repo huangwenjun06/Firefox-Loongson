@@ -79,6 +79,7 @@
     macro(fieldTypes, fieldTypes, "fieldTypes") \
     macro(fileName, fileName, "fileName") \
     macro(fix, fix, "fix") \
+    macro(flags, flags, "flags") \
     macro(float32, float32, "float32") \
     macro(float32x4, float32x4, "float32x4") \
     macro(float64, float64, "float64") \
@@ -191,6 +192,7 @@
     macro(strings, strings, "strings") \
     macro(StructType, StructType, "StructType") \
     macro(style, style, "style") \
+    macro(super, super, "super") \
     macro(test, test, "test") \
     macro(throw, throw_, "throw") \
     macro(timestamp, timestamp, "timestamp") \

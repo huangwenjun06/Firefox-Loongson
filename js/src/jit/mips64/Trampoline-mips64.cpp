@@ -27,12 +27,14 @@ static_assert(sizeof(uintptr_t) == sizeof(uint64_t), "Not 32-bit clean.");
 
 struct EnterJITRegs
 {
+    double f31;
     double f30;
+    double f29;
     double f28;
+    double f27;
     double f26;
+    double f25;
     double f24;
-    double f22;
-    double f20;
 
     // non-volatile registers.
     uint64_t ra;
@@ -65,12 +67,14 @@ GenerateReturn(MacroAssembler& masm, int returnCode)
     masm.as_ld(ra, StackPointer, offsetof(EnterJITRegs, ra));
 
     // Restore non-volatile floating point registers
-    masm.as_ld(f20, StackPointer, offsetof(EnterJITRegs, f20));
-    masm.as_ld(f22, StackPointer, offsetof(EnterJITRegs, f22));
     masm.as_ld(f24, StackPointer, offsetof(EnterJITRegs, f24));
+    masm.as_ld(f25, StackPointer, offsetof(EnterJITRegs, f25));
     masm.as_ld(f26, StackPointer, offsetof(EnterJITRegs, f26));
+    masm.as_ld(f27, StackPointer, offsetof(EnterJITRegs, f27));
     masm.as_ld(f28, StackPointer, offsetof(EnterJITRegs, f28));
+    masm.as_ld(f29, StackPointer, offsetof(EnterJITRegs, f29));
     masm.as_ld(f30, StackPointer, offsetof(EnterJITRegs, f30));
+    masm.as_ld(f31, StackPointer, offsetof(EnterJITRegs, f31));
 
     masm.freeStack(sizeof(EnterJITRegs));
 
@@ -96,12 +100,14 @@ GeneratePrologue(MacroAssembler& masm)
     masm.as_sd(ra, StackPointer, offsetof(EnterJITRegs, ra));
     masm.as_sd(a7, StackPointer, offsetof(EnterJITRegs, a7));
 
-    masm.as_sd(f20, StackPointer, offsetof(EnterJITRegs, f20));
-    masm.as_sd(f22, StackPointer, offsetof(EnterJITRegs, f22));
     masm.as_sd(f24, StackPointer, offsetof(EnterJITRegs, f24));
+    masm.as_sd(f25, StackPointer, offsetof(EnterJITRegs, f25));
     masm.as_sd(f26, StackPointer, offsetof(EnterJITRegs, f26));
+    masm.as_sd(f27, StackPointer, offsetof(EnterJITRegs, f27));
     masm.as_sd(f28, StackPointer, offsetof(EnterJITRegs, f28));
+    masm.as_sd(f29, StackPointer, offsetof(EnterJITRegs, f29));
     masm.as_sd(f30, StackPointer, offsetof(EnterJITRegs, f30));
+    masm.as_sd(f31, StackPointer, offsetof(EnterJITRegs, f31));
 }
 
 

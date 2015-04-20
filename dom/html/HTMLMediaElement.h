@@ -260,7 +260,10 @@ public:
 
   // Update the visual size of the media. Called from the decoder on the
   // main thread when/if the size changes.
-  void UpdateMediaSize(nsIntSize size);
+  void UpdateMediaSize(const nsIntSize& aSize);
+  // Like UpdateMediaSize, but only updates the size if no size has yet
+  // been set.
+  void UpdateInitialMediaSize(const nsIntSize& aSize);
 
   // Returns the CanPlayStatus indicating if we can handle the
   // full MIME type including the optional codecs parameter.
@@ -561,7 +564,6 @@ public:
   void DispatchEncrypted(const nsTArray<uint8_t>& aInitData,
                          const nsAString& aInitDataType) override;
 
-
   bool IsEventAttributeName(nsIAtom* aName) override;
 
   // Returns the principal of the "top level" document; the origin displayed
@@ -643,6 +645,7 @@ protected:
   class MediaLoadListener;
   class MediaStreamTracksAvailableCallback;
   class StreamListener;
+  class StreamSizeListener;
 
   virtual void GetItemValueText(DOMString& text) override;
   virtual void SetItemValueText(const nsAString& text) override;
@@ -1048,8 +1051,12 @@ protected:
   };
   nsTArray<OutputMediaStream> mOutputStreams;
 
-  // Holds a reference to the MediaStreamListener attached to mSrcStream.
-  nsRefPtr<StreamListener> mSrcStreamListener;
+  // Holds a reference to the MediaStreamListener attached to mPlaybackStream
+  // (or mSrcStream if mPlaybackStream is null).
+  nsRefPtr<StreamListener> mMediaStreamListener;
+  // Holds a reference to the size-getting MediaStreamListener attached to
+  // mSrcStream.
+  nsRefPtr<StreamSizeListener> mMediaStreamSizeListener;
 
   // Holds a reference to the MediaSource supplying data for playback.
   nsRefPtr<MediaSource> mMediaSource;
@@ -1125,13 +1132,6 @@ protected:
   // PRELOAD_UNDEFINED, its value is changed by calling
   // UpdatePreloadAction().
   PreloadAction mPreloadAction;
-
-  // Size of the media. Updated by the decoder on the main thread if
-  // it changes. Defaults to a width and height of -1 if not set.
-  // We keep this separate from the intrinsic size stored in the
-  // VideoFrameContainer so that it doesn't change unexpectedly under us
-  // due to decoder activity.
-  nsIntSize mMediaSize;
 
   // Time that the last timeupdate event was fired. Read/Write from the
   // main thread only.
@@ -1321,6 +1321,11 @@ protected:
 
   // True if the media has encryption information.
   bool mIsEncrypted;
+
+#ifdef MOZ_EME
+  // Init Data that needs to be sent in 'encrypted' events in MetadataLoaded().
+  EncryptionInfo mPendingEncryptedInitData;
+#endif // MOZ_EME
 
   // True if the media's channel's download has been suspended.
   bool mDownloadSuspendedByCache;

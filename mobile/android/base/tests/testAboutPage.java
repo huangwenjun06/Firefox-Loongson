@@ -5,11 +5,6 @@
 package org.mozilla.gecko.tests;
 
 import org.mozilla.gecko.Actions;
-import org.mozilla.gecko.Element;
-import org.mozilla.gecko.NewTabletUI;
-import org.mozilla.gecko.R;
-
-import android.app.Activity;
 
 /* Tests related to the about: page:
  *  - check that about: loads from the URL bar
@@ -21,14 +16,14 @@ public class testAboutPage extends PixelTest {
         blockForGeckoReady();
 
         // Load the about: page and verify its title.
-        String url = StringHelper.ABOUT_SCHEME;
+        String url = mStringHelper.ABOUT_SCHEME;
         loadAndPaint(url);
 
         verifyUrlBarTitle(url);
 
         // Open a new page to remove the about: page from the current tab.
-        url = getAbsoluteUrl(StringHelper.ROBOCOP_BLANK_PAGE_01_URL);
-        loadUrl(url);
+        url = getAbsoluteUrl(mStringHelper.ROBOCOP_BLANK_PAGE_01_URL);
+        loadUrlAndWait(url);
 
         // At this point the page title should have been set.
         verifyUrlBarTitle(url);
@@ -37,7 +32,7 @@ public class testAboutPage extends PixelTest {
         Actions.EventExpecter tabEventExpecter = mActions.expectGeckoEvent("Tab:Added");
         Actions.EventExpecter contentEventExpecter = mActions.expectGeckoEvent("DOMContentLoaded");
 
-        selectSettingsItem(StringHelper.MOZILLA_SECTION_LABEL, StringHelper.ABOUT_LABEL);
+        selectSettingsItem(mStringHelper.MOZILLA_SECTION_LABEL, mStringHelper.ABOUT_LABEL);
 
         // Wait for the new tab and page to load
         tabEventExpecter.blockForEvent();
@@ -47,6 +42,6 @@ public class testAboutPage extends PixelTest {
         contentEventExpecter.unregisterListener();
 
         // Make sure the about: page was loaded.
-        verifyUrlBarTitle(StringHelper.ABOUT_SCHEME);
+        verifyUrlBarTitle(mStringHelper.ABOUT_SCHEME);
     }
 }

@@ -11,11 +11,13 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 
 import org.mozilla.gecko.AppConstants;
+import org.mozilla.gecko.background.ReadingListConstants;
 import org.mozilla.gecko.background.common.GlobalConstants;
 import org.mozilla.gecko.background.common.log.Logger;
 import org.mozilla.gecko.background.fxa.FxAccountUtils;
@@ -58,15 +60,33 @@ public class AndroidFxAccount {
   public static final String ACCOUNT_KEY_PROFILE = "profile";
   public static final String ACCOUNT_KEY_IDP_SERVER = "idpServerURI";
 
-  // The audience should always be a prefix of the token server URI.
-  public static final String ACCOUNT_KEY_AUDIENCE = "audience";                 // Sync-specific.
   public static final String ACCOUNT_KEY_TOKEN_SERVER = "tokenServerURI";       // Sync-specific.
   public static final String ACCOUNT_KEY_DESCRIPTOR = "descriptor";
+
+  // The set of authorities to sync automatically changes over time. The first
+  // new authority is the Reading List. This tracks if we've enabled syncing,
+  // and opted in (or out) of syncing automatically, for the new Reading List
+  // authority. This happens either on when the account is created or when
+  // upgrading.
+  public static final String ACCOUNT_KEY_READING_LIST_AUTHORITY_INITIALIZED = "readingListAuthorityInitialized";
 
   public static final int CURRENT_BUNDLE_VERSION = 2;
   public static final String BUNDLE_KEY_BUNDLE_VERSION = "version";
   public static final String BUNDLE_KEY_STATE_LABEL = "stateLabel";
   public static final String BUNDLE_KEY_STATE = "state";
+
+  // Services may request OAuth tokens from the Firefox Account dynamically.
+  // Each such token is prefixed with "oauth::" and a service-dependent scope.
+  // Such tokens should be destroyed when the account is removed from the device.
+  // This list collects all the known "oauth::" token types in order to delete them when necessary.
+  private static final List<String> KNOWN_OAUTH_TOKEN_TYPES;
+  static {
+    final List<String> list = new ArrayList<>();
+    if (AppConstants.MOZ_ANDROID_READING_LIST_SERVICE) {
+      list.add(ReadingListConstants.AUTH_TOKEN_TYPE);
+    }
+    KNOWN_OAUTH_TOKEN_TYPES = Collections.unmodifiableList(list);
+  }
 
   public static final Map<String, Boolean> DEFAULT_AUTHORITIES_TO_SYNC_AUTOMATICALLY_MAP;
   static {
@@ -276,6 +296,15 @@ public class AndroidFxAccount {
     return accountManager.getUserData(account, ACCOUNT_KEY_TOKEN_SERVER);
   }
 
+  public String getOAuthServerURI() {
+    // Allow testing against stage.
+    if (FxAccountConstants.STAGE_AUTH_SERVER_ENDPOINT.equals(getAccountServerURI())) {
+      return FxAccountConstants.STAGE_OAUTH_SERVER_ENDPOINT;
+    } else {
+      return FxAccountConstants.DEFAULT_OAUTH_SERVER_ENDPOINT;
+    }
+  }
+
   private String constructPrefsPath(String product, long version, String extra) throws GeneralSecurityException, UnsupportedEncodingException {
     String profile = getProfile();
     String username = account.name;
@@ -401,6 +430,10 @@ public class AndroidFxAccount {
     userdata.putString(ACCOUNT_KEY_IDP_SERVER, idpServerURI);
     userdata.putString(ACCOUNT_KEY_TOKEN_SERVER, tokenServerURI);
     userdata.putString(ACCOUNT_KEY_PROFILE, profile);
+    if (DEFAULT_AUTHORITIES_TO_SYNC_AUTOMATICALLY_MAP.containsKey(BrowserContract.READING_LIST_AUTHORITY)) {
+      // Have we initialized the Reading List authority?
+      userdata.putString(ACCOUNT_KEY_READING_LIST_AUTHORITY_INITIALIZED, "1");
+    }
 
     if (bundle == null) {
       bundle = new ExtendedJSONObject();
@@ -590,18 +623,29 @@ public class AndroidFxAccount {
   /**
    * Create an intent announcing that a Firefox account will be deleted.
    *
-   * @param context
-   *          Android context.
-   * @param account
-   *          Android account being removed.
    * @return <code>Intent</code> to broadcast.
    */
-  public static Intent makeDeletedAccountIntent(final Context context, final Account account) {
+  public Intent makeDeletedAccountIntent() {
     final Intent intent = new Intent(FxAccountConstants.ACCOUNT_DELETED_ACTION);
+    final List<String> tokens = new ArrayList<>();
 
     intent.putExtra(FxAccountConstants.ACCOUNT_DELETED_INTENT_VERSION_KEY,
         Long.valueOf(FxAccountConstants.ACCOUNT_DELETED_INTENT_VERSION));
     intent.putExtra(FxAccountConstants.ACCOUNT_DELETED_INTENT_ACCOUNT_KEY, account.name);
+
+    // Get the tokens from AccountManager. Note: currently, only reading list service supports OAuth. The following logic will
+    // be extended in future to support OAuth for other services.
+    for (String tokenKey : KNOWN_OAUTH_TOKEN_TYPES) {
+      final String authToken = accountManager.peekAuthToken(account, tokenKey);
+      if (authToken != null) {
+        tokens.add(authToken);
+      }
+    }
+
+    // Update intent with tokens and service URI.
+    intent.putExtra(FxAccountConstants.ACCOUNT_OAUTH_SERVICE_ENDPOINT_KEY, getOAuthServerURI());
+    // Deleted broadcasts are package-private, so there's no security risk include the tokens in the extras
+    intent.putExtra(FxAccountConstants.ACCOUNT_DELETED_INTENT_ACCOUNT_AUTH_TOKENS, tokens.toArray(new String[tokens.size()]));
     return intent;
   }
 

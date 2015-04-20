@@ -50,7 +50,7 @@ static bool
 IsWordValue(int64_t v)
 {
     uint64_t sign = static_cast<uint64_t>(v) >> 31;
-    return (0 == sign) || (0x1ffffffff == sign);
+    return (0 == sign) || (0x1fffffffful == sign);
 }
 
 static uint32_t
@@ -903,16 +903,16 @@ MipsDebugger::debug()
                         printAllRegsIncludingFPU();
                     } else {
                         Register reg = Register::FromName(arg1);
-                        FloatRegisters::Code fCode = FloatRegister::FromName(arg1);
+                        FloatRegisters::Encoding fReg = FloatRegisters::FromName(arg1);
                         if (reg != InvalidReg) {
                             value = getRegisterValue(reg.code());
                             printf("%s: 0x%016lx %20ld \n", arg1, value, value);
-                        } else if (fCode != FloatRegisters::Invalid) {
+                        } else if (fReg != FloatRegisters::Invalid) {
                             printf("%3s: 0x%016lx\tflt: %-8.4g\tdbl: %-16.4g\n",
-                                   FloatRegisters::GetName(fCode),
-                                   getFPURegisterValueLong(fCode),
-                                   getFPURegisterValueFloat(fCode),
-                                   getFPURegisterValueDouble(fCode));
+                                   FloatRegisters::GetName(fReg),
+                                   getFPURegisterValueLong(fReg),
+                                   getFPURegisterValueFloat(fReg),
+                                   getFPURegisterValueDouble(fReg));
                         } else {
                             printf("%s unrecognized\n", arg1);
                         }

@@ -21,6 +21,10 @@ XPCOMUtils.defineLazyModuleGetter(this, "ReadingList",
 XPCOMUtils.defineLazyModuleGetter(this, "ServerClient",
   "resource:///modules/readinglist/ServerClient.jsm");
 
+// The maximum number of sub-requests per POST /batch supported by the server.
+// See http://readinglist.readthedocs.org/en/latest/api/batch.html.
+const BATCH_REQUEST_LIMIT = 25;
+
 // The Last-Modified header of server responses is stored here.
 const SERVER_LAST_MODIFIED_HEADER_PREF = "readinglist.sync.serverLastModified";
 
@@ -114,8 +118,11 @@ SyncImpl.prototype = {
   start() {
     if (!this.promise) {
       this.promise = Task.spawn(function* () {
-        yield this._start();
-        delete this.promise;
+        try {
+          yield this._start();
+        } finally {
+          delete this.promise;
+        }
       }.bind(this));
     }
     return this.promise;
@@ -132,6 +139,7 @@ SyncImpl.prototype = {
    */
   _start: Task.async(function* () {
     log.info("Starting sync");
+    yield this._logDiagnostics();
     yield this._uploadStatusChanges();
     yield this._uploadNewItems();
     yield this._uploadDeletedItems();
@@ -141,6 +149,43 @@ SyncImpl.prototype = {
     yield this._uploadMaterialChanges();
 
     log.info("Sync done");
+  }),
+
+  /**
+   * Phase 0 - for debugging we log some stuff about the local store before
+   * we start syncing.
+   * We only do this when the log level is "Trace" or lower as the info (a)
+   * may be expensive to generate, (b) generate alot of output and (c) may
+   * contain private information.
+   */
+  _logDiagnostics: Task.async(function* () {
+    // Sadly our log is likely to have Log.Level.All, so loop over our
+    // appenders looking for the effective level.
+    let smallestLevel = log.appenders.reduce(
+      (prev, appender) => Math.min(prev, appender.level),
+      Log.Level.Error);
+
+    if (smallestLevel > Log.Level.Trace) {
+      return;
+    }
+
+    let localItems = [];
+    yield this.list.forEachItem(localItem => localItems.push(localItem));
+    log.trace("Have " + localItems.length + " local item(s)");
+    for (let localItem of localItems) {
+      // We need to use .record so we get access to a couple of the "internal" fields.
+      let record = localItem._record;
+      let redacted = {};
+      for (let attr of ["guid", "url", "resolvedURL", "serverLastModified", "syncStatus"]) {
+        redacted[attr] = record[attr];
+      }
+      log.trace(JSON.stringify(redacted));
+    }
+    // and the GUIDs of deleted items.
+    let deletedGuids = []
+    yield this.list.forEachSyncedDeletedGUID(guid => deletedGuids.push(guid));
+    // This might be a huge line, but that's OK.
+    log.trace("Have ${num} deleted item(s): ${deletedGuids}", {num: deletedGuids.length, deletedGuids});
   }),
 
   /**
@@ -180,8 +225,6 @@ SyncImpl.prototype = {
 
     // Send the request.
     let request = {
-      method: "POST",
-      path: "/batch",
       body: {
         defaults: {
           method: "PATCH",
@@ -189,9 +232,9 @@ SyncImpl.prototype = {
         requests: requests,
       },
     };
-    let batchResponse = yield this._sendRequest(request);
+    let batchResponse = yield this._postBatch(request);
     if (batchResponse.status != 200) {
-      this._handleUnexpectedResponse("uploading changes", batchResponse);
+      this._handleUnexpectedResponse(true, "uploading changes", batchResponse);
       return;
     }
 
@@ -210,7 +253,7 @@ SyncImpl.prototype = {
         continue;
       }
       if (response.status != 200) {
-        this._handleUnexpectedResponse("uploading a change", response);
+        this._handleUnexpectedResponse(false, "uploading a change", response);
         continue;
       }
       // Don't assume the local record and the server record aren't materially
@@ -244,8 +287,6 @@ SyncImpl.prototype = {
 
     // Send the request.
     let request = {
-      method: "POST",
-      path: "/batch",
       body: {
         defaults: {
           method: "POST",
@@ -254,9 +295,9 @@ SyncImpl.prototype = {
         requests: requests,
       },
     };
-    let batchResponse = yield this._sendRequest(request);
+    let batchResponse = yield this._postBatch(request);
     if (batchResponse.status != 200) {
-      this._handleUnexpectedResponse("uploading new items", batchResponse);
+      this._handleUnexpectedResponse(true, "uploading new items", batchResponse);
       return;
     }
 
@@ -278,7 +319,7 @@ SyncImpl.prototype = {
         log.debug("Attempting to upload a new item found the server already had it", response);
         // but we still process it.
       } else if (response.status != 201) {
-        this._handleUnexpectedResponse("uploading a new item", response);
+        this._handleUnexpectedResponse(false, "uploading a new item", response);
         continue;
       }
       let item = yield this.list.itemForURL(response.body.url);
@@ -308,8 +349,6 @@ SyncImpl.prototype = {
 
     // Send the request.
     let request = {
-      method: "POST",
-      path: "/batch",
       body: {
         defaults: {
           method: "DELETE",
@@ -317,9 +356,9 @@ SyncImpl.prototype = {
         requests: requests,
       },
     };
-    let batchResponse = yield this._sendRequest(request);
+    let batchResponse = yield this._postBatch(request);
     if (batchResponse.status != 200) {
-      this._handleUnexpectedResponse("uploading deleted items", batchResponse);
+      this._handleUnexpectedResponse(true, "uploading deleted items", batchResponse);
       return;
     }
 
@@ -328,7 +367,7 @@ SyncImpl.prototype = {
       // A 404 means the item was already deleted on the server, which is OK.
       // We still need to make sure it's deleted locally, though.
       if (response.status != 200 && response.status != 404) {
-        this._handleUnexpectedResponse("uploading a deleted item", response);
+        this._handleUnexpectedResponse(false, "uploading a deleted item", response);
         continue;
       }
       yield this._deleteItemForGUID(response.body.id);
@@ -354,12 +393,17 @@ SyncImpl.prototype = {
     };
     let response = yield this._sendRequest(request);
     if (response.status != 200) {
-      this._handleUnexpectedResponse("downloading modified items", response);
+      this._handleUnexpectedResponse(true, "downloading modified items", response);
       return;
     }
 
     // Update local items based on the response.
     for (let serverRecord of response.body.items) {
+      if (serverRecord.deleted) {
+        // _deleteItemForGUID is a no-op if no item exists with the GUID.
+        yield this._deleteItemForGUID(serverRecord.id);
+        continue;
+      }
       let localItem = yield this._itemForGUID(serverRecord.id);
       if (localItem) {
         if (localItem.serverLastModified == serverRecord.last_modified) {
@@ -372,20 +416,22 @@ SyncImpl.prototype = {
         // the material-changes phase.
         // TODO
 
-        if (serverRecord.deleted) {
-          yield this._deleteItemForGUID(serverRecord.id);
-          continue;
-        }
         yield this._updateItemWithServerRecord(localItem, serverRecord);
         continue;
       }
-      // new item
+      // A potentially new item.  addItem() will fail here when an item was
+      // added to the local list between the time we uploaded new items and
+      // now.
       let localRecord = localRecordFromServerRecord(serverRecord);
       try {
         yield this.list.addItem(localRecord);
       } catch (ex) {
-        log.warn("Failed to add a new item from server record ${serverRecord}: ${ex}",
-                 {serverRecord, ex});
+        if (ex instanceof ReadingList.Error.Exists) {
+          log.debug("Tried to add an item that already exists.");
+        } else {
+          log.error("Error adding an item from server record ${serverRecord} ${ex}",
+                    { serverRecord, ex });
+        }
       }
     }
 
@@ -428,14 +474,24 @@ SyncImpl.prototype = {
    */
   _updateItemWithServerRecord: Task.async(function* (localItem, serverRecord) {
     if (!localItem) {
-      throw new Error("Item should exist");
+      // The item may have been deleted from the local list between the time we
+      // saw that it needed updating and now.
+      log.debug("Tried to update a null local item from server record",
+                serverRecord);
+      return;
     }
     localItem._record = localRecordFromServerRecord(serverRecord);
     try {
       yield this.list.updateItem(localItem);
     } catch (ex) {
-      log.warn("Failed to update an item from server record ${serverRecord}: ${ex}",
-               {serverRecord, ex});
+      // The item may have been deleted from the local list after we fetched it.
+      if (ex instanceof ReadingList.Error.Deleted) {
+        log.debug("Tried to update an item that was deleted from server record",
+                  serverRecord);
+      } else {
+        log.error("Error updating an item from server record ${serverRecord} ${ex}",
+                  { serverRecord, ex });
+      }
     }
   }),
 
@@ -455,8 +511,8 @@ SyncImpl.prototype = {
       try {
         yield this.list.deleteItem(item);
       } catch (ex) {
-        log.warn("Failed delete local item with id ${guid}: ${ex}",
-                 {guid, ex});
+        log.error("Failed delete local item with id ${guid} ${ex}",
+                  { guid, ex });
       }
       return;
     }
@@ -468,8 +524,8 @@ SyncImpl.prototype = {
     try {
       this.list._store.deleteItemByGUID(guid);
     } catch (ex) {
-      log.warn("Failed to delete local item with id ${guid}: ${ex}",
-               {guid, ex});
+      log.error("Failed to delete local item with id ${guid} ${ex}",
+                { guid, ex });
     }
   }),
 
@@ -487,8 +543,60 @@ SyncImpl.prototype = {
     return response;
   }),
 
-  _handleUnexpectedResponse(contextMsgFragment, response) {
-    log.warn(`Unexpected response ${contextMsgFragment}`, response);
+  /**
+   * The server limits the number of sub-requests in POST /batch'es to
+   * BATCH_REQUEST_LIMIT.  This method takes an arbitrarily big batch request
+   * and breaks it apart into many individual batch requests in order to stay
+   * within the limit.
+   *
+   * @param bigRequest The same type of request object that _sendRequest takes.
+   *        Since it's a POST /batch request, its `body` should have a
+   *        `requests` property whose value is an array of sub-requests.
+   *        `method` and `path` are automatically filled.
+   * @return Promise<response> Resolved when all requests complete with 200s, or
+   *         when the first response that is not a 200 is received.  In the
+   *         first case, the resolved response is a combination of all the
+   *         server responses, and response.body.responses contains the sub-
+   *         responses for all the sub-requests in bigRequest.  In the second
+   *         case, the resolved response is the non-200 response straight from
+   *         the server.
+   */
+  _postBatch: Task.async(function* (bigRequest) {
+    log.debug("Sending batch requests");
+    let allSubResponses = [];
+    let remainingSubRequests = bigRequest.body.requests;
+    while (remainingSubRequests.length) {
+      let request = Object.assign({}, bigRequest);
+      request.method = "POST";
+      request.path = "/batch";
+      request.body.requests =
+        remainingSubRequests.splice(0, BATCH_REQUEST_LIMIT);
+      let response = yield this._sendRequest(request);
+      if (response.status != 200) {
+        return response;
+      }
+      allSubResponses = allSubResponses.concat(response.body.responses);
+    }
+    let bigResponse = {
+      status: 200,
+      body: {
+        responses: allSubResponses,
+      },
+    };
+    log.debug("All batch requests successfully sent");
+    return bigResponse;
+  }),
+
+  _handleUnexpectedResponse(isTopLevel, contextMsgFragment, response) {
+    log.error(`Unexpected response ${contextMsgFragment}`, response);
+    // We want to throw in some cases so the sync engine knows there was an
+    // error and retries using the error schedule. 401 implies an auth issue
+    // (possibly transient, possibly not) - but things like 404 might just
+    // relate to a single item and need not throw.  Any 5XX implies a
+    // (hopefully transient) server error.
+    if (isTopLevel && (response.status == 401 || response.status >= 500)) {
+      throw new Error("Sync aborted due to " + response.status + " server response.");
+    }
   },
 
   // TODO: Wipe this pref when user logs out.

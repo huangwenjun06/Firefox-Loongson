@@ -206,7 +206,7 @@ class IonBuilder
 
         static CFGState If(jsbytecode* join, MTest* test);
         static CFGState IfElse(jsbytecode* trueEnd, jsbytecode* falseEnd, MTest* test);
-        static CFGState AndOr(jsbytecode* join, MBasicBlock* joinStart);
+        static CFGState AndOr(jsbytecode* join, MBasicBlock* lhs);
         static CFGState TableSwitch(jsbytecode* exitpc, MTableSwitch* ins);
         static CFGState CondSwitch(IonBuilder* builder, jsbytecode* exitpc, jsbytecode* defaultTarget);
         static CFGState Label(jsbytecode* exitpc);
@@ -353,6 +353,9 @@ class IonBuilder
     MConstant* constant(const Value& v);
     MConstant* constantInt(int32_t i);
 
+    // Note: This function might return nullptr in case of failure.
+    MConstant* constantMaybeAtomize(const Value& v);
+
     // Improve the type information at tests
     bool improveTypesAtTest(MDefinition* ins, bool trueBranch, MTest* test);
     bool improveTypesAtCompare(MCompare* ins, bool trueBranch, MTest* test);
@@ -398,13 +401,11 @@ class IonBuilder
     MDefinition* addMaybeCopyElementsForWrite(MDefinition* object);
     MInstruction* addBoundsCheck(MDefinition* index, MDefinition* length);
     MInstruction* addShapeGuard(MDefinition* obj, Shape* const shape, BailoutKind bailoutKind);
-    MInstruction* addGroupGuard(MDefinition* obj, ObjectGroup* group, BailoutKind bailoutKind,
-                                bool checkUnboxedExpando = false);
+    MInstruction* addGroupGuard(MDefinition* obj, ObjectGroup* group, BailoutKind bailoutKind);
+    MInstruction* addUnboxedExpandoGuard(MDefinition* obj, bool hasExpando, BailoutKind bailoutKind);
 
     MInstruction*
-    addGuardReceiverPolymorphic(MDefinition* obj,
-                                const BaselineInspector::ShapeVector& shapes,
-                                const BaselineInspector::ObjectGroupVector& unboxedGroups);
+    addGuardReceiverPolymorphic(MDefinition* obj, const BaselineInspector::ReceiverVector& receivers);
 
     MDefinition* convertShiftToMaskForStaticTypedArray(MDefinition* id,
                                                        Scalar::Type viewType);
@@ -847,6 +848,8 @@ class IonBuilder
     InliningStatus inlineSimdStore(CallInfo& callInfo, JSNative native, SimdTypeDescr::Type type,
                                    unsigned numElems);
 
+    InliningStatus inlineSimdBool(CallInfo& callInfo, JSNative native, SimdTypeDescr::Type type);
+
     // Utility intrinsics.
     InliningStatus inlineIsCallable(CallInfo& callInfo);
     InliningStatus inlineIsObject(CallInfo& callInfo);
@@ -918,8 +921,8 @@ class IonBuilder
 
     MDefinition*
     addShapeGuardsForGetterSetter(MDefinition* obj, JSObject* holder, Shape* holderShape,
-                                  const BaselineInspector::ShapeVector& receiverShapes,
-                                  const BaselineInspector::ObjectGroupVector& receiverGroups,
+                                  const BaselineInspector::ReceiverVector& receivers,
+                                  const BaselineInspector::ObjectGroupVector& convertUnboxedGroups,
                                   bool isOwnProperty);
 
     bool annotateGetPropertyCache(MDefinition* obj, MGetPropertyCache* getPropCache,
@@ -943,8 +946,7 @@ class IonBuilder
                                        MDefinition* value);
     bool freezePropTypeSets(TemporaryTypeSet* types,
                             JSObject* foundProto, PropertyName* name);
-    bool canInlinePropertyOpShapes(const BaselineInspector::ShapeVector& nativeShapes,
-                                   const BaselineInspector::ObjectGroupVector& unboxedGroups);
+    bool canInlinePropertyOpShapes(const BaselineInspector::ReceiverVector& receivers);
 
     TemporaryTypeSet* bytecodeTypes(jsbytecode* pc);
 
@@ -1030,7 +1032,9 @@ class IonBuilder
         return analysis_;
     }
 
-    TemporaryTypeSet* thisTypes, *argTypes, *typeArray;
+    TemporaryTypeSet* thisTypes;
+    TemporaryTypeSet* argTypes;
+    TemporaryTypeSet* typeArray;
     uint32_t typeArrayHint;
     uint32_t* bytecodeTypeMap;
 
@@ -1350,8 +1354,6 @@ class CallInfo
             getArg(i)->setImplicitlyUsedUnchecked();
     }
 };
-
-bool TypeSetIncludes(TypeSet* types, MIRType input, TypeSet* inputTypes);
 
 bool NeedsPostBarrier(CompileInfo& info, MDefinition* value);
 

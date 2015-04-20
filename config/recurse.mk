@@ -6,10 +6,6 @@ ifndef INCLUDED_RULES_MK
 include $(topsrcdir)/config/rules.mk
 endif
 
-# Make sure that anything that needs to be defined in moz.build wasn't
-# overwritten after including rules.mk.
-_eval_for_side_effects := $(CHECK_MOZBUILD_VARIABLES)
-
 # The traditional model of directory traversal with make is as follows:
 #   make -C foo
 #     Entering foo
@@ -167,5 +163,8 @@ endif
 ifdef MOZ_CRT
 mozglue/crt/target: mozglue/build/target
 endif
-
+# js/src/target can end up invoking js/src/host rules (through object files
+# depending on jsautokw.h, which depends on host_jskwgen, and that can't
+# happen at the same time (bug #1146738)
+js/src/target: js/src/host
 endif

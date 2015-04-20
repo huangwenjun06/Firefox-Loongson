@@ -658,7 +658,7 @@ TokenStream::reportCompileErrorNumberVA(uint32_t offset, unsigned flags, unsigne
     if (offset != NoOffset && !err.report.filename && cx->isJSContext()) {
         NonBuiltinFrameIter iter(cx->asJSContext(),
                                  FrameIter::ALL_CONTEXTS, FrameIter::GO_THROUGH_SAVED,
-                                 cx->compartment()->principals);
+                                 cx->compartment()->principals());
         if (!iter.done() && iter.scriptFilename()) {
             callerFilename = true;
             err.report.filename = iter.scriptFilename();
@@ -1007,6 +1007,7 @@ TokenStream::checkForKeyword(const KeywordInfo* kw, TokenKind* ttp)
 #ifndef JS_HAS_CLASSES
         || kw->tokentype == TOK_CLASS
         || kw->tokentype == TOK_EXTENDS
+        || kw->tokentype == TOK_SUPER
 #endif
         )
     {

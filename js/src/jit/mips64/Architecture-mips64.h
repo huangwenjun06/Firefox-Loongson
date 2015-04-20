@@ -106,7 +106,7 @@ class Registers
         ra = r31,
         invalid_reg
     };
-    typedef RegisterID Code;
+    typedef uint8_t Code;
     typedef RegisterID Encoding;
 
     // Content spilled during bailouts.
@@ -128,8 +128,8 @@ class Registers
 
     static Code FromName(const char* name);
 
-    static const Code StackPointer = sp;
-    static const Code Invalid = invalid_reg;
+    static const Encoding StackPointer = sp;
+    static const Encoding Invalid = invalid_reg;
 
     static const uint32_t Total = 32;
     static const uint32_t Allocatable = 22;
@@ -262,7 +262,6 @@ class FloatRegisters
         NumTypes
     };
 
-    typedef FPRegisterID Code;
     typedef FPRegisterID Encoding;
 
     // Content spilled during bailouts.
@@ -271,7 +270,7 @@ class FloatRegisters
         double d;
     };
 
-    static const char* GetName(Code code) {
+    static const char* GetName(Encoding code) {
         static const char * const Names[] = { "f0", "f1", "f2", "f3",  "f4", "f5",  "f6", "f7",
                                               "f8", "f9",  "f10", "f11", "f12", "f13",
                                               "f14", "f15", "f16", "f17", "f18", "f19",
@@ -280,13 +279,13 @@ class FloatRegisters
         return Names[code];
     }
     static const char* GetName(uint32_t i) {
-        MOZ_ASSERT(i < Total);
-        return GetName(Code(i % 32));
+        MOZ_ASSERT(i < TotalPhys);
+        return GetName(Encoding(i));
     }
 
-    static Code FromName(const char* name);
+    static Encoding FromName(const char* name);
 
-    static const Code Invalid = invalid_freg;
+    static const Encoding Invalid = invalid_freg;
 
     static const uint32_t Total = 32 * NumTypes;
     static const uint32_t Allocatable = 60;
@@ -345,31 +344,31 @@ class FloatRegister
 {
   public:
     typedef FloatRegisters Codes;
-    typedef Codes::Code Code;
+    typedef size_t Code;
     typedef Codes::Encoding Encoding;
     typedef Codes::ContentType ContentType;
 
-    Code code_ : 6;
+    Encoding reg_: 6;
   private:
     ContentType kind_ : 3;
 
   public:
-    MOZ_CONSTEXPR FloatRegister(uint32_t code, ContentType kind = Codes::Double)
-      : code_ (Code(code)), kind_(kind)
+    MOZ_CONSTEXPR FloatRegister(uint32_t r, ContentType kind = Codes::Double)
+      : reg_(Encoding(r)), kind_(kind)
     { }
     MOZ_CONSTEXPR FloatRegister()
-      : code_(Code(FloatRegisters::invalid_freg)), kind_(Codes::Double)
+      : reg_(Encoding(FloatRegisters::invalid_freg)), kind_(Codes::Double)
     { }
 
     bool operator==(const FloatRegister& other) const {
         MOZ_ASSERT(!isInvalid());
         MOZ_ASSERT(!other.isInvalid());
-        return kind_ == other.kind_ && code_ == other.code_;
+        return kind_ == other.kind_ && reg_ == other.reg_;
     }
     bool equiv(const FloatRegister& other) const { return other.kind_ == kind_; }
     size_t size() const { return (kind_ == Codes::Double) ? sizeof(double) : sizeof (float); }
     bool isInvalid() const {
-        return code_ == FloatRegisters::invalid_freg;
+        return reg_ == FloatRegisters::invalid_freg;
     }
 
     bool isSingle() const { return kind_ == Codes::Single; }
@@ -387,14 +386,15 @@ class FloatRegister
 
     Code code() const {
         MOZ_ASSERT(!isInvalid());
-        return Code(code_ | (kind_ << 5));
+        return Code(reg_ | (kind_ << 5));
     }
     Encoding encoding() const {
         MOZ_ASSERT(!isInvalid());
-        return Code(code_  | (kind_ << 5));
+        MOZ_ASSERT(uint32_t(reg_) < Codes::TotalPhys);
+        return reg_;
     }
     uint32_t id() const {
-        return code_;
+        return reg_;
     }
     static FloatRegister FromCode(uint32_t i) {
         uint32_t code = i & 0x1f;
@@ -403,16 +403,16 @@ class FloatRegister
     }
 
     bool volatile_() const {
-        return !!((1 << code_) & FloatRegisters::VolatileMask);
+        return !!((1 << reg_) & FloatRegisters::VolatileMask);
     }
     const char* name() const {
-        return FloatRegisters::GetName(code_);
+        return FloatRegisters::GetName(reg_);
     }
     bool operator != (const FloatRegister& other) const {
-        return kind_ != other.kind_ || code_ != other.code_;
+        return kind_ != other.kind_ || reg_ != other.reg_;
     }
     bool aliases(const FloatRegister& other) {
-        return code_ == other.code_;
+        return reg_ == other.reg_;
     }
     uint32_t numAliased() const {
         return 2;
@@ -443,11 +443,7 @@ class FloatRegister
     typedef FloatRegisters::SetType SetType;
 
     SetType alignedOrDominatedAliasedSet() const {
-        if (isSingle())
-            return SetType(1) << code_;
-
-        MOZ_ASSERT(isDouble());
-        return SetType(0b11) << code_;
+        return Codes::Spread << reg_;
     }
 
     static uint32_t SetSize(SetType x) {

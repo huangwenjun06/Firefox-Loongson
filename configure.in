@@ -50,7 +50,7 @@ _SUBDIR_CONFIG_ARGS="$ac_configure_args"
 dnl Set the version number of the libs included with mozilla
 dnl ========================================================
 MOZJPEG=62
-MOZPNG=10616
+MOZPNG=10617
 NSPR_VERSION=4
 NSPR_MINVER=4.10.8
 NSS_VERSION=3
@@ -73,7 +73,7 @@ GNOMEUI_VERSION=2.2.0
 GCONF_VERSION=1.2.1
 STARTUP_NOTIFICATION_VERSION=0.8
 DBUS_VERSION=0.60
-SQLITE_VERSION=3.8.8.2
+SQLITE_VERSION=3.8.9
 
 MSMANIFEST_TOOL=
 
@@ -2347,22 +2347,6 @@ ia64*-hpux*)
         ;;
     esac
 
-    case "$host" in
-    *-mingw*)
-        if test -z "$MOZ_TOOLS"; then
-            AC_MSG_ERROR([MOZ_TOOLS is not set])
-        fi
-        MOZ_TOOLS_DIR=`cd $MOZ_TOOLS && pwd -W`
-        if test "$?" != "0" -o -z "$MOZ_TOOLS_DIR"; then
-            AC_MSG_ERROR([cd \$MOZ_TOOLS failed. MOZ_TOOLS ==? $MOZ_TOOLS])
-        fi
-        MOZ_TOOLS_BIN_DIR="$(cd "$MOZ_TOOLS_DIR/bin" && pwd)"
-        if test `echo ${PATH}: | grep -ic "$MOZ_TOOLS_BINDIR:"` = 0; then
-            AC_MSG_ERROR([\$MOZ_TOOLS\\bin must be in your path.])
-        fi
-        ;;
-    esac
-
     case "$host_os" in
     cygwin*|msvc*|mks*)
         AC_MSG_ERROR([Using a Cygwin build environment is unsupported. Configure cannot check for presence of necessary headers. Please upgrade to MozillaBuild; see https://developer.mozilla.org/en/Windows_Build_Prerequisites.])
@@ -3958,6 +3942,7 @@ MOZ_ANDROID_MLS_STUMBLER=
 MOZ_ANDROID_SHARE_OVERLAY=
 ACCESSIBILITY=1
 MOZ_TIME_MANAGER=
+MOZ_SIMPLEPUSH=
 MOZ_PAY=
 MOZ_AUDIO_CHANNEL_MANAGER=
 NSS_NO_LIBPKIX=
@@ -5331,6 +5316,10 @@ MOZ_ARG_DISABLE_BOOL(fmp4,
     MOZ_FMP4=,
     MOZ_FMP4=1)
 
+if test -n "$MOZ_FFMPEG" -a -z "$MOZ_FMP4"; then
+    AC_MSG_ERROR([Fragmented MP4 support must be enabled if using FFMPEG])
+fi
+
 if test -n "$MOZ_FMP4"; then
     AC_DEFINE(MOZ_FMP4)
     MOZ_EME=1
@@ -6425,11 +6414,7 @@ MOZ_ARG_ENABLE_BOOL(verify-mar,
     MOZ_VERIFY_MAR_SIGNATURE= )
 
 if test -n "$MOZ_VERIFY_MAR_SIGNATURE"; then
-  if test "$OS_ARCH" = "WINNT"; then
-    AC_DEFINE(MOZ_VERIFY_MAR_SIGNATURE)
-  else
-    AC_MSG_ERROR([Can only build with --enable-verify-mar with a Windows target])
-  fi
+  AC_DEFINE(MOZ_VERIFY_MAR_SIGNATURE)
 fi
 
 dnl ========================================================
@@ -6963,12 +6948,15 @@ elif test "$GNU_CC"; then
     # -Wdeprecated-declarations - we don't want our builds held hostage when a
     #   platform-specific API becomes deprecated.
     # -Wfree-nonheap-object - false positives during PGO
+    # -Warray-bounds - false positives depending on optimization
     MOZ_C_SUPPORTS_WARNING(-W, no-error=uninitialized, ac_c_has_noerror_uninitialized)
     MOZ_CXX_SUPPORTS_WARNING(-W, no-error=uninitialized, ac_cxx_has_noerror_uninitialized)
     MOZ_C_SUPPORTS_WARNING(-W, no-error=maybe-uninitialized, ac_c_has_noerror_maybe_uninitialized)
     MOZ_CXX_SUPPORTS_WARNING(-W, no-error=maybe-uninitialized, ac_cxx_has_noerror_maybe_uninitialized)
     MOZ_C_SUPPORTS_WARNING(-W, no-error=deprecated-declarations, ac_c_has_noerror_deprecated_declarations)
     MOZ_CXX_SUPPORTS_WARNING(-W, no-error=deprecated-declarations, ac_cxx_has_noerror_deprecated_declarations)
+    MOZ_C_SUPPORTS_WARNING(-W, no-error=array-bounds, ac_c_has_noerror_array_bounds)
+    MOZ_CXX_SUPPORTS_WARNING(-W, no-error=array-bounds, ac_cxx_has_noerror_array_bounds)
 
     if test -n "$MOZ_PGO"; then
         MOZ_C_SUPPORTS_WARNING(-W, no-error=coverage-mismatch, ac_c_has_noerror_coverage_mismatch)
@@ -7400,6 +7388,8 @@ if test -n "$STDCXX_COMPAT"; then
    eval $(CXX="$CXX" HOST_CXX="$HOST_CXX" $PYTHON -m mozbuild.configure.libstdcxx)
    AC_SUBST(MOZ_LIBSTDCXX_TARGET_VERSION)
    AC_SUBST(MOZ_LIBSTDCXX_HOST_VERSION)
+   CXXFLAGS="$CXXFLAGS -D_GLIBCXX_USE_CXX11_ABI=0"
+   HOST_CXXFLAGS="$HOST_CXXFLAGS -D_GLIBCXX_USE_CXX11_ABI=0"
 fi
 
 dnl ========================================================
@@ -7544,6 +7534,15 @@ if test -n "$MOZ_B2G_CAMERA"; then
    AC_DEFINE(MOZ_B2G_CAMERA)
 fi
 AC_SUBST(MOZ_B2G_CAMERA)
+
+dnl ========================================================
+dnl = Enable Support for SimplePush (Gonk usually)
+dnl   This will disable the Push API.
+dnl ========================================================
+if test -n "$MOZ_SIMPLEPUSH"; then
+    AC_DEFINE(MOZ_SIMPLEPUSH)
+fi
+AC_SUBST(MOZ_SIMPLEPUSH)
 
 dnl ========================================================
 dnl = Enable Support for Payment API
@@ -8619,7 +8618,11 @@ fi
 IS_ALPHA=`echo $MOZ_APP_VERSION | grep a`
 if test -z "$IS_ALPHA"; then
   changequote(,)
-  MOZ_APP_MAXVERSION=`echo $MOZ_APP_VERSION | sed "s|\(^[0-9]*\).*|\1|"`.*
+  if test "$(basename $MOZ_BUILD_APP)" = "suite"; then
+    MOZ_APP_MAXVERSION=`echo $MOZ_APP_VERSION | sed "s|\(^[0-9]*\.[0-9]*\).*|\1|"`.*
+  else
+    MOZ_APP_MAXVERSION=`echo $MOZ_APP_VERSION | sed "s|\(^[0-9]*\).*|\1|"`.*
+  fi
   changequote([,])
 else
   MOZ_APP_MAXVERSION=$MOZ_APP_VERSION
@@ -8687,7 +8690,6 @@ fi
 
 dnl win32 options
 AC_SUBST(MOZ_BROWSE_INFO)
-AC_SUBST(MOZ_TOOLS_DIR)
 AC_SUBST(WIN32_REDIST_DIR)
 AC_SUBST(MAKENSISU)
 

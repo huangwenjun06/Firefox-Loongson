@@ -144,8 +144,50 @@ struct JSCompartment
     JSRuntime*                   runtime_;
 
   public:
-    JSPrincipals*                principals;
-    bool                         isSystem;
+    /*
+     * The principals associated with this compartment. Note that the
+     * same several compartments may share the same principals and
+     * that a compartment may change principals during its lifetime
+     * (e.g. in case of lazy parsing).
+     */
+    inline JSPrincipals* principals() {
+        return principals_;
+    }
+    inline void setPrincipals(JSPrincipals* principals) {
+        if (principals_ == principals)
+            return;
+
+        // If we change principals, we need to unlink immediately this
+        // compartment from its PerformanceGroup. For one thing, the
+        // performance data we collect should not be improperly associated
+        // with a group to which we do not belong anymore. For another thing,
+        // we use `principals()` as part of the key to map compartments
+        // to a `PerformanceGroup`, so if we do not unlink now, this will
+        // be too late once we have updated `principals_`.
+        performanceMonitoring.unlink();
+        principals_ = principals;
+    }
+    inline bool isSystem() const {
+        return isSystem_;
+    }
+    inline void setIsSystem(bool isSystem) {
+        if (isSystem_ == isSystem)
+            return;
+
+        // If we change `isSystem*(`, we need to unlink immediately this
+        // compartment from its PerformanceGroup. For one thing, the
+        // performance data we collect should not be improperly associated
+        // to a group to which we do not belong anymore. For another thing,
+        // we use `isSystem()` as part of the key to map compartments
+        // to a `PerformanceGroup`, so if we do not unlink now, this will
+        // be too late once we have updated `isSystem_`.
+        performanceMonitoring.unlink();
+        isSystem_ = isSystem;
+    }
+  private:
+    JSPrincipals*                principals_;
+    bool                         isSystem_;
+  public:
     bool                         isSelfHosting;
     bool                         marked;
     bool                         warnedAboutNoSuchMethod;
@@ -153,7 +195,7 @@ struct JSCompartment
 
     // A null add-on ID means that the compartment is not associated with an
     // add-on.
-    JSAddonId*                   addonId;
+    JSAddonId*                   const addonId;
 
 #ifdef DEBUG
     bool                         firedOnNewGlobalObject;
@@ -171,18 +213,13 @@ struct JSCompartment
     int64_t                      startInterval;
 
   public:
-    int64_t                      totalTime;
+    js::PerformanceGroupHolder performanceMonitoring;
+
     void enter() {
-        if (addonId && !enterCompartmentDepth) {
-            startInterval = PRMJ_Now();
-        }
         enterCompartmentDepth++;
     }
     void leave() {
         enterCompartmentDepth--;
-        if (addonId && !enterCompartmentDepth) {
-            totalTime += (PRMJ_Now() - startInterval);
-        }
     }
     bool hasBeenEntered() { return !!enterCompartmentDepth; }
 
@@ -574,6 +611,15 @@ JSRuntime::isAtomsZone(JS::Zone* zone)
 }
 
 namespace js {
+
+// We only set the maybeAlive flag for objects and scripts. It's assumed that,
+// if a compartment is alive, then it will have at least some live object or
+// script it in. Even if we get this wrong, the worst that will happen is that
+// scheduledForDestruction will be set on the compartment, which will cause
+// some extra GC activity to try to free the compartment.
+template<typename T> inline void SetMaybeAliveFlag(T* thing) {}
+template<> inline void SetMaybeAliveFlag(JSObject* thing) {thing->compartment()->maybeAlive = true;}
+template<> inline void SetMaybeAliveFlag(JSScript* thing) {thing->compartment()->maybeAlive = true;}
 
 inline js::Handle<js::GlobalObject*>
 ExclusiveContext::global() const
