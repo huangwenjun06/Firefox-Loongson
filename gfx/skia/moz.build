@@ -845,11 +845,11 @@ elif CONFIG['CPU_ARCH'] == 'arm' and CONFIG['GNU_CC']:
 elif CONFIG['CPU_ARCH'].startswith('mips'):
     SOURCES += [
         'trunk/src/opts/SkBitmapProcState_opts_LS3.cpp',
+        'trunk/src/opts/SkBlitMask_opts_LS3.cpp',
         'trunk/src/opts/SkBlitRow_opts_LS3.cpp',
         'trunk/src/opts/SkUtils_opts_LS3.cpp',
     ]
     UNIFIED_SOURCES += [
-        'trunk/src/opts/SkBlitMask_opts_none.cpp',
         'trunk/src/opts/SkBlurImage_opts_none.cpp',
         'trunk/src/opts/SkMorphology_opts_none.cpp',
         'trunk/src/opts/SkTextureCompression_opts_none.cpp',
