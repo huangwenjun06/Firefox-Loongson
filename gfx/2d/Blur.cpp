@@ -570,12 +570,21 @@ AlphaBoxBlur::Blur(uint8_t* aData)
       } else
 #endif
       {
+#ifdef _MIPS_ARCH_LOONGSON3A
+        BoxBlur_LS3(aData, horizontalLobes[0][0], horizontalLobes[0][1], verticalLobes[0][0],
+                     verticalLobes[0][1], integralImage, integralImageStride);
+        BoxBlur_LS3(aData, horizontalLobes[1][0], horizontalLobes[1][1], verticalLobes[1][0],
+                     verticalLobes[1][1], integralImage, integralImageStride);
+        BoxBlur_LS3(aData, horizontalLobes[2][0], horizontalLobes[2][1], verticalLobes[2][0],
+                     verticalLobes[2][1], integralImage, integralImageStride);
+#else
         BoxBlur_C(aData, horizontalLobes[0][0], horizontalLobes[0][1], verticalLobes[0][0],
                   verticalLobes[0][1], integralImage, integralImageStride);
         BoxBlur_C(aData, horizontalLobes[1][0], horizontalLobes[1][1], verticalLobes[1][0],
                   verticalLobes[1][1], integralImage, integralImageStride);
         BoxBlur_C(aData, horizontalLobes[2][0], horizontalLobes[2][1], verticalLobes[2][0],
                   verticalLobes[2][1], integralImage, integralImageStride);
+#endif 
       }
     }
   }
@@ -590,7 +599,7 @@ GenerateIntegralRow(uint32_t  *aDest, const uint8_t *aSource, uint32_t *aPreviou
   for (uint32_t x = 0; x < aLeftInflation; x++) {
     currentRowSum += pixel;
     *aDest++ = currentRowSum + *aPreviousRow++;
-  }
+  
   for (uint32_t x = aLeftInflation; x < (aSourceWidth + aLeftInflation); x += 4) {
       uint32_t alphaValues = *(uint32_t*)(aSource + (x - aLeftInflation));
 #if defined WORDS_BIGENDIAN || defined IS_BIG_ENDIAN || defined __BIG_ENDIAN__
