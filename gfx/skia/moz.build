@@ -844,10 +844,10 @@ elif CONFIG['CPU_ARCH'] == 'arm' and CONFIG['GNU_CC']:
         SOURCES['trunk/src/opts/SkXfermode_opts_arm_neon.cpp'].flags += ['-mfpu=neon']
 elif CONFIG['CPU_ARCH'].startswith('mips'):
     SOURCES += [
+        'trunk/src/opts/SkBitmapProcState_opts_LS3.cpp',
         'trunk/src/opts/SkUtils_opts_LS3.cpp',
     ]
     UNIFIED_SOURCES += [
-        'trunk/src/opts/SkBitmapProcState_opts_none.cpp',
         'trunk/src/opts/SkBlitMask_opts_none.cpp',
         'trunk/src/opts/SkBlitRow_opts_none.cpp',
         'trunk/src/opts/SkBlurImage_opts_none.cpp',
