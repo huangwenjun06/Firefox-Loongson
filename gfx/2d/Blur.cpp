@@ -599,7 +599,7 @@ GenerateIntegralRow(uint32_t  *aDest, const uint8_t *aSource, uint32_t *aPreviou
   for (uint32_t x = 0; x < aLeftInflation; x++) {
     currentRowSum += pixel;
     *aDest++ = currentRowSum + *aPreviousRow++;
-  
+  } 
   for (uint32_t x = aLeftInflation; x < (aSourceWidth + aLeftInflation); x += 4) {
       uint32_t alphaValues = *(uint32_t*)(aSource + (x - aLeftInflation));
 #if defined WORDS_BIGENDIAN || defined IS_BIG_ENDIAN || defined __BIG_ENDIAN__
