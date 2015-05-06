@@ -650,13 +650,13 @@ pref("gfx.canvas.azure.backends", "skia");
 // Accelerated cg canvas where available (10.7+)
 pref("gfx.canvas.azure.accelerated", false);
 #else
-pref("gfx.canvas.azure.backends", "cairo,skia");
-pref("gfx.content.azure.backends", "cairo,skia");
+pref("gfx.canvas.azure.backends", "skia,cairo");
+pref("gfx.content.azure.backends", "skia,cairo");
 #endif
 #endif
 
 #ifdef MOZ_WIDGET_GTK2
-pref("gfx.content.azure.backends", "cairo");
+pref("gfx.content.azure.backends", "skia,cairo");
 #endif
 #ifdef ANDROID
 pref("gfx.content.azure.backends", "cairo");
