@@ -217,6 +217,7 @@ class MacroAssemblerMIPS : public Assembler
     // memory
     // shortcut for when we know we're transferring 32 bits of data
     void ma_lw(Register data, Address address);
+    void ma_lw(Register data, BaseIndex address);
 
     void ma_sw(Register data, Address address);
     void ma_sw(Imm32 imm, Address address);

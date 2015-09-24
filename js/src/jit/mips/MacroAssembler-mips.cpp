@@ -831,6 +831,12 @@ MacroAssemblerMIPS::ma_lw(Register data, Address address)
 }
 
 void
+MacroAssemblerMIPS::ma_lw(Register data, BaseIndex& address)
+{
+    ma_load(data, address, SizeWord);
+}
+
+void
 MacroAssemblerMIPS::ma_sw(Register data, Address address)
 {
     ma_store(data, address, SizeWord);
