@@ -49,7 +49,9 @@ inline Atomic32 NoBarrier_CompareAndSwap(volatile Atomic32* ptr,
                                          Atomic32 old_value,
                                          Atomic32 new_value) {
   Atomic32 prev, tmp;
-  __asm__ __volatile__(".set push\n"
+  __asm__ __volatile__(
+			".set mips3	\t\n"
+			".set push\n"
                        ".set noreorder\n"
                        "1:\n"
                        "ll %0, %5\n"  // prev = *ptr
@@ -71,7 +73,9 @@ inline Atomic32 NoBarrier_CompareAndSwap(volatile Atomic32* ptr,
 inline Atomic32 NoBarrier_AtomicExchange(volatile Atomic32* ptr,
                                          Atomic32 new_value) {
   Atomic32 temp, old;
-  __asm__ __volatile__(".set push\n"
+  __asm__ __volatile__(
+			".set mips3	\t\n"
+			".set push\n"
                        ".set noreorder\n"
                        "1:\n"
                        "ll %1, %4\n"  // old = *ptr
@@ -93,7 +97,9 @@ inline Atomic32 NoBarrier_AtomicIncrement(volatile Atomic32* ptr,
                                           Atomic32 increment) {
   Atomic32 temp, temp2;
 
-  __asm__ __volatile__(".set push\n"
+  __asm__ __volatile__(
+			".set mips3	\t\n"
+			".set push\n"
                        ".set noreorder\n"
                        "1:\n"
                        "ll %0, %4\n"  // temp = *ptr
@@ -143,7 +149,9 @@ inline void NoBarrier_Store(volatile Atomic32* ptr, Atomic32 value) {
 }
 
 inline void MemoryBarrier() {
-  __asm__ __volatile__("sync" : : : "memory");
+  __asm__ __volatile__(
+			".set mips3	\t\n"
+			"sync" : : : "memory");
 }
 
 inline void Acquire_Store(volatile Atomic32* ptr, Atomic32 value) {
