@@ -160,7 +160,7 @@ class MacroAssemblerMIPS : public Assembler
     // load
     void ma_load(Register dest, Address address, LoadStoreSize size = SizeWord,
                  LoadStoreExtension extension = SignExtend);
-    void ma_load(Register dest, const BaseIndex& src, LoadStoreSize size = SizeWord,
+    void ma_load(Register dest, const BaseIndex src, LoadStoreSize size = SizeWord,
                  LoadStoreExtension extension = SignExtend);
 
     // store

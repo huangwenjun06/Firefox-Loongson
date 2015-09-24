@@ -749,7 +749,7 @@ MacroAssemblerMIPS::ma_load(Register dest, Address address,
 }
 
 void
-MacroAssemblerMIPS::ma_load(Register dest, const BaseIndex& src,
+MacroAssemblerMIPS::ma_load(Register dest, const BaseIndex src,
                             LoadStoreSize size, LoadStoreExtension extension)
 {
     computeScaledAddress(src, SecondScratchReg);
@@ -831,7 +831,7 @@ MacroAssemblerMIPS::ma_lw(Register data, Address address)
 }
 
 void
-MacroAssemblerMIPS::ma_lw(Register data, BaseIndex& address)
+MacroAssemblerMIPS::ma_lw(Register data, BaseIndex address)
 {
     ma_load(data, address, SizeWord);
 }
