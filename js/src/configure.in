@@ -967,12 +967,8 @@ arm*)
     CPU_ARCH=arm
     ;;
 
-mips|mipsel)
+mips|mipsel|mips64|mips64el)
     CPU_ARCH="mips"
-    ;;
-
-mips64|mips64el)
-    CPU_ARCH="mips64"
     ;;
 
 aarch64*)
@@ -2102,13 +2098,13 @@ sparc-*)
 dnl ENABLE_ION=0
     AC_DEFINE(JS_CPU_SPARC)
     ;;
-mips64*-*)
-    ENABLE_ION=1
-    AC_DEFINE(JS_CPU_MIPS64)
-    ;;
 mips*-*)
     ENABLE_ION=1
     AC_DEFINE(JS_CPU_MIPS)
+    ;;
+mips64*-*)
+    ENABLE_ION=1
+    AC_DEFINE(JS_CPU_MIPS64)
     ;;
 esac
 

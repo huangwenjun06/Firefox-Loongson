@@ -390,6 +390,10 @@ class TypedRegisterSet
     }
 
 
+    void addUnchecked(T reg) {
+        addAllocatable(reg);
+    }
+
     void takeRegisterIndex(T reg) {
         bits_ &= ~(SetType(1) << reg.code());
     }
