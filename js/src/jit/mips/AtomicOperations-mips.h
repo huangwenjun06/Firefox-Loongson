@@ -6,8 +6,8 @@
 
 /* For documentation, see jit/AtomicOperations.h */
 
-#ifndef jit_mips_shared_AtomicOperations_mips_shared_h
-#define jit_mips_shared_AtomicOperations_mips_shared_h
+#ifndef jit_mips_AtomicOperations_mips_h
+#define jit_mips_AtomicOperations_mips_h
 
 #include "jit/AtomicOperations.h"
 
