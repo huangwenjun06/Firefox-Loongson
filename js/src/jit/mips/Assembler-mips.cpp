@@ -91,7 +91,8 @@ js::jit::RT(Register r)
 uint32_t
 js::jit::RT(FloatRegister r)
 {
-    MOZ_ASSERT(r.id() < FloatRegisters::TotalSingle);
+    MOZ_ASSERT(r.id() < FloatRegisters::MaxRegisterId);
+//    MOZ_ASSERT(r.id() < FloatRegisters::TotalSingle);
     return r.id() << RTShift;
 }
 
@@ -105,7 +106,7 @@ js::jit::RD(Register r)
 uint32_t
 js::jit::RD(FloatRegister r)
 {
-    MOZ_ASSERT(r.id() < FloatRegisters::TotalSingle);
+    MOZ_ASSERT(r.id() < FloatRegisters::MaxRegisterId);
     return r.id() << RDShift;
 }
 
@@ -119,7 +120,8 @@ js::jit::SA(uint32_t value)
 uint32_t
 js::jit::SA(FloatRegister r)
 {
-    MOZ_ASSERT(r.id() < FloatRegisters::TotalSingle);
+    MOZ_ASSERT(r.id() < FloatRegisters::MaxRegisterId);
+//    MOZ_ASSERT(r.id() < FloatRegisters::TotalSingle);
     return r.id() << SAShift;
 }
 

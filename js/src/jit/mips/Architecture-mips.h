@@ -299,16 +299,26 @@ class FloatRegisters
 //    static const Code Invalid = invalid_freg;
     static const Encoding Invalid = invalid_freg;
 
+    static const uint32_t MaxRegisterId = 32;   //hwj 1
+
     static const uint32_t Total = 64;
     static const uint32_t TotalDouble = 16;
-    static const uint32_t TotalSingle = 32;
-    static const uint32_t Allocatable = 42;
+
+
+    // Only even registers are double.
+    static const uint64_t AllDoubleMask = 0x55555555ULL << 32;
+
+//    static const uint32_t TotalSingle = 32;
+    static const uint32_t TotalSingle = 16;     //hwj 2
+//    static const uint32_t Allocatable = 42;
+    static const uint32_t Allocatable = 32;     //hwj 3
     // When saving all registers we only need to do is save double registers.
-    static const uint32_t TotalPhys = 16;
+    static const uint32_t TotalPhys = 16;       //hwj 4
 
     typedef uint64_t SetType;
-    static const SetType AllDoubleMask = 0x55555555ULL << 32;
-    static const SetType AllMask = AllDoubleMask | ((1ULL << 32) - 1);
+    static const SetType AllSingleMask = 0x55555555ULL; //hwj 5
+    static const SetType AllMask = AllDoubleMask | AllSingleMask;
+//    static const SetType AllMask = AllDoubleMask | ((1ULL << 32) - 1);
 
     static const SetType NonVolatileDoubleMask =
         ((1ULL << FloatRegisters::f20) |
