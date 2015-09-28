@@ -270,7 +270,8 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
         // if profiler instrumentation is enabled.
         {
             Label skipProfilingInstrumentation;
-            Register realFramePtr = numStackValues;
+            //Register realFramePtr = numStackValues;
+            Register realFramePtr = regs.takeAny();
             AbsoluteAddress addressOfEnabled(cx->runtime()->spsProfiler.addressOfEnabled());
             masm.branch32(Assembler::Equal, addressOfEnabled, Imm32(0),
                           &skipProfilingInstrumentation);
