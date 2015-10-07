@@ -236,6 +236,7 @@ class CodeGeneratorMIPS : public CodeGeneratorShared
 
     // Functions for LTestVAndBranch.
     Register splitTagForTest(const ValueOperand& value);
+    void memoryBarrier(MemoryBarrierBits barrier);
 
   public:
     CodeGeneratorMIPS(MIRGenerator* gen, LIRGraph* graph, MacroAssembler* masm);
@@ -268,6 +269,7 @@ class CodeGeneratorMIPS : public CodeGeneratorShared
     void visitAsmJSLoadFFIFunc(LAsmJSLoadFFIFunc* ins);
 
     void visitAsmJSPassStackArg(LAsmJSPassStackArg* ins);
+    void visitMemoryBarrier(LMemoryBarrier* ins);
 
     void generateInvalidateEpilogue();
 
