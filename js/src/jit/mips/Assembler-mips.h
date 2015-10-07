@@ -318,11 +318,15 @@ enum Opcode {
     op_sw       = 43 << OpcodeShift,
     op_swr      = 46 << OpcodeShift,
 
+    op_ll       = 48 << OpcodeShift,
     op_lwc1     = 49 << OpcodeShift,
     op_ldc1     = 53 << OpcodeShift,
+    op_ld       = 55 << OpcodeShift,
 
+    op_sc       = 56 << OpcodeShift,
     op_swc1     = 57 << OpcodeShift,
-    op_sdc1     = 61 << OpcodeShift
+    op_sdc1     = 61 << OpcodeShift,
+    op_sd       = 63 << OpcodeShift
 };
 
 enum RSField {
@@ -367,6 +371,7 @@ enum FunctionField {
     ff_movz        = 10,
     ff_movn        = 11,
     ff_break       = 13,
+    ff_sync        = 15,
 
     ff_mfhi        = 16,
     ff_mflo        = 18,
@@ -403,6 +408,7 @@ enum FunctionField {
     // special3 encoding of function field.
     ff_ext         = 0,
     ff_ins         = 4,
+    ff_bshfl       = 32,
 
     // cop1 encoding of function field.
     ff_add_fmt     = 0,
@@ -889,12 +895,15 @@ class Assembler : public AssemblerShared
     BufferOffset as_lw(Register rd, Register rs, int16_t off);
     BufferOffset as_lwl(Register rd, Register rs, int16_t off);
     BufferOffset as_lwr(Register rd, Register rs, int16_t off);
+    BufferOffset as_ll(Register rd, Register rs, int16_t off);
+    BufferOffset as_ld(Register rd, Register rs, int16_t off);
     BufferOffset as_sb(Register rd, Register rs, int16_t off);
     BufferOffset as_sh(Register rd, Register rs, int16_t off);
     BufferOffset as_sw(Register rd, Register rs, int16_t off);
     BufferOffset as_swl(Register rd, Register rs, int16_t off);
     BufferOffset as_swr(Register rd, Register rs, int16_t off);
-
+    BufferOffset as_sd(Register rd, Register rs, int16_t off);
+    BufferOffset as_sc(Register rd, Register rs, int16_t off);
     // Move from HI/LO register.
     BufferOffset as_mfhi(Register rd);
     BufferOffset as_mflo(Register rd);
@@ -915,6 +924,10 @@ class Assembler : public AssemblerShared
     BufferOffset as_clz(Register rd, Register rs);
     BufferOffset as_ins(Register rt, Register rs, uint16_t pos, uint16_t size);
     BufferOffset as_ext(Register rt, Register rs, uint16_t pos, uint16_t size);
+
+    //sign extended
+    BufferOffset as_seb(Register rd, Register rt);
+    BufferOffset as_seh(Register rd, Register rt);
 
     // FP instructions
 
@@ -1017,7 +1030,7 @@ class Assembler : public AssemblerShared
     void call(void* target);
 
     void as_break(uint32_t code);
-
+    void as_sync(uint32_t stype = 0);
   public:
     static void TraceJumpRelocations(JSTracer* trc, JitCode* code, CompactBufferReader& reader);
     static void TraceDataRelocations(JSTracer* trc, JitCode* code, CompactBufferReader& reader);

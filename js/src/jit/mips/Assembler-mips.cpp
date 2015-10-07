@@ -913,6 +913,19 @@ Assembler::as_lwr(Register rd, Register rs, int16_t off)
     return writeInst(InstImm(op_lwr, rs, rd, Imm16(off)).encode());
 }
 
+//hwj
+BufferOffset
+Assembler::as_ll(Register rd, Register rs, int16_t off)
+{   
+    return writeInst(InstImm(op_ll, rs, rd, Imm16(off)).encode());
+}
+
+BufferOffset
+Assembler::as_ld(Register rd, Register rs, int16_t off)
+{   
+    return writeInst(InstImm(op_ld, rs, rd, Imm16(off)).encode());
+}
+
 BufferOffset
 Assembler::as_sb(Register rd, Register rs, int16_t off)
 {
@@ -941,6 +954,13 @@ BufferOffset
 Assembler::as_swr(Register rd, Register rs, int16_t off)
 {
     return writeInst(InstImm(op_swr, rs, rd, Imm16(off)).encode());
+}
+
+
+BufferOffset
+Assembler::as_sd(Register rd, Register rs, int16_t off)
+{
+    return writeInst(InstImm(op_sd, rs, rd, Imm16(off)).encode());
 }
 
 // Move from HI/LO register.
@@ -1037,12 +1057,33 @@ Assembler::as_ext(Register rt, Register rs, uint16_t pos, uint16_t size)
     return writeInst(InstReg(op_special3, rs, rt, rd, pos, ff_ext).encode());
 }
 
+//sign extended
+BufferOffset
+Assembler::as_seb(Register rd, Register rt)
+{       
+    return writeInst(InstReg(op_special3, zero, rt, rd, 16, ff_bshfl).encode());
+}
+
+
+BufferOffset
+Assembler::as_seh(Register rd, Register rt)
+{       
+    return writeInst(InstReg(op_special3, zero, rt, rd, 24, ff_bshfl).encode());
+} 
+
 // FP instructions
 BufferOffset
 Assembler::as_ld(FloatRegister fd, Register base, int32_t off)
 {
     MOZ_ASSERT(Imm16::IsInSignedRange(off));
     return writeInst(InstImm(op_ldc1, base, fd, Imm16(off)).encode());
+}
+
+
+BufferOffset
+Assembler::as_sc(Register rd, Register rs, int16_t off)
+{
+    return writeInst(InstImm(op_sc, rs, rd, Imm16(off)).encode());
 }
 
 BufferOffset
@@ -1466,6 +1507,13 @@ Assembler::as_break(uint32_t code)
 {
     MOZ_ASSERT(code <= MAX_BREAK_CODE);
     writeInst(op_special | code << FunctionBits | ff_break);
+}
+
+void
+Assembler::as_sync(uint32_t stype)
+{
+    MOZ_ASSERT(stype <= 31);
+    writeInst(InstReg(op_special, zero, zero, zero, stype, ff_sync).encode());
 }
 
 uint32_t

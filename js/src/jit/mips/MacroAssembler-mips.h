@@ -977,6 +977,26 @@ public:
     }
 
     void handleFailureWithHandlerTail(void* handler);
+       
+    //hwj atomic start
+    void atomicEffectOpMIPS(int nbytes, AtomicOp op, const Register& value, const Register& addr,
+                                AllocatableGeneralRegisterSet& regs);
+    void atomicEffectOp(int nbytes, AtomicOp op, const Imm32& value, const Address& address);
+    void atomicEffectOp(int nbytes, AtomicOp op, const Imm32& value, const BaseIndex& address);
+    void atomicEffectOp(int nbytes, AtomicOp op, const Register& value, const Address& address);
+    void atomicEffectOp(int nbytes, AtomicOp op, const Register& value, const BaseIndex& address);
+
+    void atomicFetchOpMIPS(int nbytes, bool signExtend, AtomicOp op, const Register& value, const Register& addr,
+                            const Register& temp, const Register& output, AllocatableGeneralRegisterSet& regs);
+    void atomicFetchOp(int nbytes, bool signExtend, AtomicOp op, const Imm32& value,
+                       const Address& address, Register temp, Register output);
+    void atomicFetchOp(int nbytes, bool signExtend, AtomicOp op, const Imm32& value,
+                       const BaseIndex& address, Register temp, Register output);
+    void atomicFetchOp(int nbytes, bool signExtend, AtomicOp op, const Register& value,
+                       const Address& address, Register temp, Register output);
+    void atomicFetchOp(int nbytes, bool signExtend, AtomicOp op, const Register& value,
+                       const BaseIndex& address, Register temp, Register output);
+
 
     /////////////////////////////////////////////////////////////////
     // Common interface.
@@ -1012,164 +1032,206 @@ public:
 
     template<typename T, typename S>
     void atomicFetchAdd8SignExtend(const S& value, const T& mem, Register temp, Register output) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicFetchOp(1, true, AtomicFetchAddOp, value, mem, temp, output);
     }
     template<typename T, typename S>
     void atomicFetchAdd8ZeroExtend(const S& value, const T& mem, Register temp, Register output) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicFetchOp(1, false, AtomicFetchAddOp, value, mem, temp, output);
     }
     template<typename T, typename S>
     void atomicFetchAdd16SignExtend(const S& value, const T& mem, Register temp, Register output) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicFetchOp(2, true, AtomicFetchAddOp, value, mem, temp, output);
     }
     template<typename T, typename S>
     void atomicFetchAdd16ZeroExtend(const S& value, const T& mem, Register temp, Register output) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicFetchOp(2, false, AtomicFetchAddOp, value, mem, temp, output);
     }
     template<typename T, typename S>
     void atomicFetchAdd32(const S& value, const T& mem, Register temp, Register output) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicFetchOp(4, false, AtomicFetchAddOp, value, mem, temp, output);
     }
+
     template <typename T, typename S>
     void atomicAdd8(const T& value, const S& mem) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicEffectOp(1, AtomicFetchAddOp, value, mem);
     }
     template <typename T, typename S>
     void atomicAdd16(const T& value, const S& mem) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicEffectOp(2, AtomicFetchAddOp, value, mem);
     }
     template <typename T, typename S>
     void atomicAdd32(const T& value, const S& mem) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicEffectOp(4, AtomicFetchAddOp, value, mem);
     }
 
     template<typename T, typename S>
     void atomicFetchSub8SignExtend(const S& value, const T& mem, Register temp, Register output) {
-        MOZ_CRASH("NYI");
+        atomicFetchOp(1, true, AtomicFetchSubOp, value, mem, temp, output);
+        //MOZ_CRASH("NYI");
     }
     template<typename T, typename S>
     void atomicFetchSub8ZeroExtend(const S& value, const T& mem, Register temp, Register output) {
-        MOZ_CRASH("NYI");
+         atomicFetchOp(1, false, AtomicFetchSubOp, value, mem, temp, output);
+        //MOZ_CRASH("NYI");
     }
     template<typename T, typename S>
     void atomicFetchSub16SignExtend(const S& value, const T& mem, Register temp, Register output) {
-        MOZ_CRASH("NYI");
+        atomicFetchOp(2, true, AtomicFetchSubOp, value, mem, temp, output);
+        //MOZ_CRASH("NYI");
     }
     template<typename T, typename S>
     void atomicFetchSub16ZeroExtend(const S& value, const T& mem, Register temp, Register output) {
-        MOZ_CRASH("NYI");
+        atomicFetchOp(2, false, AtomicFetchSubOp, value, mem, temp, output);
+        //MOZ_CRASH("NYI");
     }
     template<typename T, typename S>
     void atomicFetchSub32(const S& value, const T& mem, Register temp, Register output) {
-        MOZ_CRASH("NYI");
+        atomicFetchOp(4, false, AtomicFetchSubOp, value, mem, temp, output);
+        //MOZ_CRASH("NYI");
     }
+
     template <typename T, typename S> void atomicSub8(const T& value, const S& mem) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicEffectOp(1, AtomicFetchSubOp, value, mem);
     }
     template <typename T, typename S> void atomicSub16(const T& value, const S& mem) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicEffectOp(2, AtomicFetchSubOp, value, mem);
     }
     template <typename T, typename S> void atomicSub32(const T& value, const S& mem) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicEffectOp(4, AtomicFetchSubOp, value, mem);
     }
 
     template<typename T, typename S>
     void atomicFetchAnd8SignExtend(const S& value, const T& mem, Register temp, Register output) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicFetchOp(1, true, AtomicFetchAndOp, value, mem, temp, output);
     }
     template<typename T, typename S>
     void atomicFetchAnd8ZeroExtend(const S& value, const T& mem, Register temp, Register output) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+         atomicFetchOp(1, false, AtomicFetchAndOp, value, mem, temp, output);
     }
     template<typename T, typename S>
     void atomicFetchAnd16SignExtend(const S& value, const T& mem, Register temp, Register output) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicFetchOp(2, true, AtomicFetchAndOp, value, mem, temp, output);
     }
     template<typename T, typename S>
     void atomicFetchAnd16ZeroExtend(const S& value, const T& mem, Register temp, Register output) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicFetchOp(2, false, AtomicFetchAndOp, value, mem, temp, output);
     }
     template<typename T, typename S>
     void atomicFetchAnd32(const S& value, const T& mem, Register temp, Register output) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicFetchOp(4, false, AtomicFetchAndOp, value, mem, temp, output);
     }
     template <typename T, typename S>
     void atomicAnd8(const T& value, const S& mem) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicEffectOp(1, AtomicFetchAndOp, value, mem);
     }
     template <typename T, typename S>
     void atomicAnd16(const T& value, const S& mem) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicEffectOp(2, AtomicFetchAndOp, value, mem);
     }
     template <typename T, typename S>
     void atomicAnd32(const T& value, const S& mem) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicEffectOp(4, AtomicFetchAndOp, value, mem);
     }
 
     template<typename T, typename S>
     void atomicFetchOr8SignExtend(const S& value, const T& mem, Register temp, Register output) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicFetchOp(1, true, AtomicFetchOrOp, value, mem, temp, output);
     }
     template<typename T, typename S>
     void atomicFetchOr8ZeroExtend(const S& value, const T& mem, Register temp, Register output) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicFetchOp(1, false, AtomicFetchOrOp, value, mem, temp, output);
     }
     template<typename T, typename S>
     void atomicFetchOr16SignExtend(const S& value, const T& mem, Register temp, Register output) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicFetchOp(2, true, AtomicFetchOrOp, value, mem, temp, output);
     }
     template<typename T, typename S>
     void atomicFetchOr16ZeroExtend(const S& value, const T& mem, Register temp, Register output) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicFetchOp(2, false, AtomicFetchOrOp, value, mem, temp, output);
     }
     template<typename T, typename S>
     void atomicFetchOr32(const S& value, const T& mem, Register temp, Register output) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicFetchOp(4, false, AtomicFetchOrOp, value, mem, temp, output);
     }
     template <typename T, typename S>
     void atomicOr8(const T& value, const S& mem) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicEffectOp(1, AtomicFetchOrOp, value, mem);
     }
     template <typename T, typename S>
     void atomicOr16(const T& value, const S& mem) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicEffectOp(2, AtomicFetchOrOp, value, mem);
     }
     template <typename T, typename S>
     void atomicOr32(const T& value, const S& mem) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicEffectOp(4, AtomicFetchOrOp, value, mem);
     }
 
     template<typename T, typename S>
     void atomicFetchXor8SignExtend(const S& value, const T& mem, Register temp, Register output) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicFetchOp(1, true, AtomicFetchXorOp, value, mem, temp, output);
     }
     template<typename T, typename S>
     void atomicFetchXor8ZeroExtend(const S& value, const T& mem, Register temp, Register output) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicFetchOp(1, false, AtomicFetchXorOp, value, mem, temp, output);
     }
     template<typename T, typename S>
     void atomicFetchXor16SignExtend(const S& value, const T& mem, Register temp, Register output) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicFetchOp(2, true, AtomicFetchXorOp, value, mem, temp, output);
     }
     template<typename T, typename S>
     void atomicFetchXor16ZeroExtend(const S& value, const T& mem, Register temp, Register output) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicFetchOp(2, false, AtomicFetchXorOp, value, mem, temp, output);
     }
     template<typename T, typename S>
     void atomicFetchXor32(const S& value, const T& mem, Register temp, Register output) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicFetchOp(4, false, AtomicFetchXorOp, value, mem, temp, output);
     }
     template <typename T, typename S>
     void atomicXor8(const T& value, const S& mem) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicEffectOp(1, AtomicFetchXorOp, value, mem);
     }
     template <typename T, typename S>
     void atomicXor16(const T& value, const S& mem) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicEffectOp(2, AtomicFetchXorOp, value, mem);
     }
     template <typename T, typename S>
     void atomicXor32(const T& value, const S& mem) {
-        MOZ_CRASH("NYI");
+        //MOZ_CRASH("NYI");
+        atomicEffectOp(4, AtomicFetchXorOp, value, mem);
     }
 
     CodeOffsetLabel PushWithPatch(ImmWord word) {

@@ -3596,6 +3596,223 @@ MacroAssemblerMIPSCompat::handleFailureWithHandlerTail(void* handler)
     jump(a1);
 }
 
+//hwj atomic start
+
+void
+MacroAssemblerMIPSCompat::atomicEffectOpMIPS(int nbytes, AtomicOp op,
+            const Register& value, const Register& addr, AllocatableGeneralRegisterSet& regs)
+{   
+    atomicFetchOpMIPS(nbytes, false, op, value, addr, InvalidReg, InvalidReg, regs);
+}
+
+void                                                                  
+MacroAssemblerMIPSCompat::atomicFetchOpMIPS(int nbytes, bool signExtend, AtomicOp op, const Register& value,                             
+            const Register& addr, const Register& temp, const Register& output, AllocatableGeneralRegisterSet& regs)
+{           
+    Label again;
+    Register t0, t1, t2, t3, t4, t5;                                  
+    
+    t0 = regs.takeAny(); 
+    t1 = regs.takeAny();                                              
+    t2 = regs.takeAny();                                              
+    t3 = regs.takeAny();                                              
+    t4 = regs.takeAny();                                              
+    t5 = temp;
+    
+    // The addr maybe is ScratchRegister, so don't use macro          
+    // instructions depends it here.                                  
+    as_sd(t0, StackPointer, (int16_t)-(1 * sizeof(uintptr_t)));       
+    as_sd(t1, StackPointer, (int16_t)-(2 * sizeof(uintptr_t)));       
+    as_sd(t2, StackPointer, (int16_t)-(3 * sizeof(uintptr_t)));       
+    as_sd(t3, StackPointer, (int16_t)-(4 * sizeof(uintptr_t)));       
+    as_sd(t4, StackPointer, (int16_t)-(5 * sizeof(uintptr_t)));       
+    if (temp == InvalidReg) {
+        t5 = regs.takeAny();
+        as_sd(t5, StackPointer, (int16_t)-(6 * sizeof(uintptr_t)));   
+    }
+    as_andi(t0, addr, 3);
+    as_subu(addr, addr, t0);
+    as_sll(t2, t0, 3);
+    as_sllv(t1, value, t2);
+    ma_li(t3, Imm32(0xffffffffu >> ((4 - nbytes) * 8)));
+    as_sllv(t3, t3, t2);
+    ma_not(t4, t3);
+
+    bind(&again);
+
+    as_sync(0);
+
+    as_ll(t0, addr, 0);
+
+    if (output != InvalidReg) {
+        as_and(output, t0, t3);
+        as_srlv(output, output, t2);
+        if (signExtend) {
+            switch (nbytes) {
+            case 1:
+                as_seb(output, output);
+                break;
+            case 2:
+                as_seh(output, output);
+                break;
+            case 4:
+                as_sll(output, output, 0);
+                break;
+            default:
+                MOZ_CRASH("NYI");
+            }
+        }
+    }
+    switch (op) {
+         case AtomicFetchAddOp:
+             as_addu(t5, t0, t1);
+             break;
+         case AtomicFetchSubOp:
+             as_subu(t5, t0, t1);
+             break;
+         case AtomicFetchAndOp:
+             as_and(t5, t0, t1);
+             break;
+         case AtomicFetchOrOp:
+             as_or(t5, t0, t1);
+             break;
+         case AtomicFetchXorOp:
+             as_xor(t5, t0, t1);
+             break;
+         default:
+             MOZ_CRASH("NYI");
+    }
+
+    as_and(t5, t5, t3);
+    as_and(t0, t0, t4);
+    as_or(t0, t0, t5);
+
+    as_sc(t0, addr, 0);
+
+    ma_b(t0, t0, &again, Zero, ShortJump);
+
+    as_sync(0);
+    as_ld(t0, StackPointer, (int16_t)-(1 * sizeof(uintptr_t)));
+    as_ld(t1, StackPointer, (int16_t)-(2 * sizeof(uintptr_t)));
+    as_ld(t2, StackPointer, (int16_t)-(3 * sizeof(uintptr_t)));
+    as_ld(t3, StackPointer, (int16_t)-(4 * sizeof(uintptr_t)));
+    as_ld(t4, StackPointer, (int16_t)-(5 * sizeof(uintptr_t)));
+    if (temp == InvalidReg)
+      as_ld(t5, StackPointer, (int16_t)-(6 * sizeof(uintptr_t)));
+}
+
+//atomicEffectOp
+void
+MacroAssemblerMIPSCompat::atomicEffectOp(int nbytes, AtomicOp op, const Imm32& value, const Address& address)
+{
+    AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
+
+    regs.takeUnchecked(address.base);
+    ma_li(SecondScratchReg, value);
+    computeEffectiveAddress(address, ScratchRegister);
+    atomicEffectOpMIPS(nbytes, op, SecondScratchReg, ScratchRegister, regs);
+}
+
+void
+MacroAssemblerMIPSCompat::atomicEffectOp(int nbytes, AtomicOp op, const Imm32& value, const BaseIndex& address)
+{
+    AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
+
+    regs.takeUnchecked(address.base);
+    regs.takeUnchecked(address.index);
+    ma_li(SecondScratchReg, value);
+    computeEffectiveAddress(address, ScratchRegister);
+    atomicEffectOpMIPS(nbytes, op, SecondScratchReg, ScratchRegister, regs);
+}
+
+void
+MacroAssemblerMIPSCompat::atomicEffectOp(int nbytes, AtomicOp op, const Register& value, const Address& address)
+{
+    AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
+
+    regs.takeUnchecked(value);
+    regs.takeUnchecked(address.base);
+    computeEffectiveAddress(address, ScratchRegister);
+    atomicEffectOpMIPS(nbytes, op, value, ScratchRegister, regs);
+}
+
+void
+MacroAssemblerMIPSCompat::atomicEffectOp(int nbytes, AtomicOp op, const Register& value, const BaseIndex& address)
+{
+    AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
+
+    regs.takeUnchecked(value);
+    regs.takeUnchecked(address.base);
+    regs.takeUnchecked(address.index);
+    computeEffectiveAddress(address, ScratchRegister);
+    atomicEffectOpMIPS(nbytes, op, value, ScratchRegister, regs);
+}
+
+//atomicFetchOp
+//Imm32 --> Address
+void
+MacroAssemblerMIPSCompat::atomicFetchOp(int nbytes, bool signExtend, AtomicOp op, const Imm32& value,
+                   const Address& address, Register temp, Register output)
+{
+    AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
+
+    regs.takeUnchecked(temp);
+    regs.takeUnchecked(output);
+    regs.takeUnchecked(address.base);
+    ma_li(SecondScratchReg, value);
+    computeEffectiveAddress(address, ScratchRegister);
+    atomicFetchOpMIPS(nbytes, signExtend, op, SecondScratchReg, ScratchRegister, temp, output, regs);
+}
+
+//Imm32--->BaseIndex
+void
+MacroAssemblerMIPSCompat::atomicFetchOp(int nbytes, bool signExtend, AtomicOp op, const Imm32& value,
+                   const BaseIndex& address, Register temp, Register output)
+{
+    AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
+
+    regs.takeUnchecked(temp);
+    regs.takeUnchecked(output);
+    regs.takeUnchecked(address.base);
+    regs.takeUnchecked(address.index);
+    ma_li(SecondScratchReg, value);
+    computeEffectiveAddress(address, ScratchRegister);
+    atomicFetchOpMIPS(nbytes, signExtend, op, SecondScratchReg, ScratchRegister, temp, output, regs);
+}
+
+//Register--->Address
+void
+MacroAssemblerMIPSCompat::atomicFetchOp(int nbytes, bool signExtend, AtomicOp op, const Register& value,
+                   const Address& address, Register temp, Register output)
+{
+    AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
+
+    regs.takeUnchecked(value);
+    regs.takeUnchecked(temp);
+    regs.takeUnchecked(output);
+    regs.takeUnchecked(address.base);
+    computeEffectiveAddress(address, ScratchRegister);
+    atomicFetchOpMIPS(nbytes, signExtend, op, value, ScratchRegister, temp, output, regs);
+}
+
+//Register--->BaseIndex
+void
+MacroAssemblerMIPSCompat::atomicFetchOp(int nbytes, bool signExtend, AtomicOp op, const Register& value,
+                   const BaseIndex& address, Register temp, Register output)
+{
+    AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
+
+    regs.takeUnchecked(value);
+    regs.takeUnchecked(temp);
+    regs.takeUnchecked(output);
+    regs.takeUnchecked(address.base);
+    regs.takeUnchecked(address.index);
+    computeEffectiveAddress(address, ScratchRegister);
+    atomicFetchOpMIPS(nbytes, signExtend, op, value, ScratchRegister, temp, output, regs);
+}
+
+//hwj atomic end
+
 CodeOffsetLabel
 MacroAssemblerMIPSCompat::toggledJump(Label* label)
 {
