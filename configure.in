@@ -8999,7 +8999,8 @@ if test "$MOZ_WIDGET_TOOLKIT" = "android" ||
    test "$MOZ_BUILD_APP" = "b2g/dev"; then
     _INTL_API=no
 else
-    _INTL_API=yes
+    _INTL_API=no
+dnl _INTL_API=yes
 fi
 
 if test "$MOZ_WIDGET_TOOLKIT" = "cocoa"; then
