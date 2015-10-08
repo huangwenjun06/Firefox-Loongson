@@ -197,6 +197,8 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
         regs.take(OsrFrameReg);
         regs.take(BaselineFrameReg);
         regs.take(reg_code);
+        
+        regs.take(ReturnReg);//heihe
 
         const Address slotNumStackValues(BaselineFrameReg, sizeof(EnterJITRegs) +
                                          offsetof(EnterJITArgs, numStackValues));
@@ -255,7 +257,7 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
         //regs.add(scratch);
         //regs.add(numStackValues);
         regs.take(JSReturnOperand);
-        regs.take(ReturnReg);
+        //regs.take(ReturnReg);
         Register jitcode = regs.takeAny();
         masm.loadPtr(Address(StackPointer, 0), jitcode);
         masm.loadPtr(Address(StackPointer, sizeof(uintptr_t)), framePtr);
@@ -270,8 +272,8 @@ JitRuntime::generateEnterJIT(JSContext* cx, EnterJitType type)
         // if profiler instrumentation is enabled.
         {
             Label skipProfilingInstrumentation;
-            Register realFramePtr = numStackValues;
-            //Register realFramePtr = regs.takeAny();
+            //Register realFramePtr = numStackValues;
+            Register realFramePtr = regs.takeAny();
             AbsoluteAddress addressOfEnabled(cx->runtime()->spsProfiler.addressOfEnabled());
             masm.branch32(Assembler::Equal, addressOfEnabled, Imm32(0),
                           &skipProfilingInstrumentation);
