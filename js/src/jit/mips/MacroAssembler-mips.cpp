@@ -3611,24 +3611,24 @@ MacroAssemblerMIPSCompat::atomicFetchOpMIPS(int nbytes, bool signExtend, AtomicO
 {           
     Label again;
     Register t0, t1, t2, t3, t4, t5;                                  
-    
+      
     t0 = regs.takeAny(); 
     t1 = regs.takeAny();                                              
     t2 = regs.takeAny();                                              
     t3 = regs.takeAny();                                              
     t4 = regs.takeAny();                                              
     t5 = temp;
-    
+
     // The addr maybe is ScratchRegister, so don't use macro          
     // instructions depends it here.                                  
-    as_sd(t0, StackPointer, (int16_t)-(1 * sizeof(uintptr_t)));       
-    as_sd(t1, StackPointer, (int16_t)-(2 * sizeof(uintptr_t)));       
-    as_sd(t2, StackPointer, (int16_t)-(3 * sizeof(uintptr_t)));       
-    as_sd(t3, StackPointer, (int16_t)-(4 * sizeof(uintptr_t)));       
-    as_sd(t4, StackPointer, (int16_t)-(5 * sizeof(uintptr_t)));       
+    as_sw(t0, StackPointer, (int16_t)-(1 * sizeof(uintptr_t)));       
+    as_sw(t1, StackPointer, (int16_t)-(2 * sizeof(uintptr_t)));       
+    as_sw(t2, StackPointer, (int16_t)-(3 * sizeof(uintptr_t)));       
+    as_sw(t3, StackPointer, (int16_t)-(4 * sizeof(uintptr_t)));       
+    as_sw(t4, StackPointer, (int16_t)-(5 * sizeof(uintptr_t)));       
     if (temp == InvalidReg) {
         t5 = regs.takeAny();
-        as_sd(t5, StackPointer, (int16_t)-(6 * sizeof(uintptr_t)));   
+        as_sw(t5, StackPointer, (int16_t)-(6 * sizeof(uintptr_t)));   
     }
     as_andi(t0, addr, 3);
     as_subu(addr, addr, t0);
@@ -3692,13 +3692,13 @@ MacroAssemblerMIPSCompat::atomicFetchOpMIPS(int nbytes, bool signExtend, AtomicO
     ma_b(t0, t0, &again, Zero, ShortJump);
 
     as_sync(0);
-    as_ld(t0, StackPointer, (int16_t)-(1 * sizeof(uintptr_t)));
-    as_ld(t1, StackPointer, (int16_t)-(2 * sizeof(uintptr_t)));
-    as_ld(t2, StackPointer, (int16_t)-(3 * sizeof(uintptr_t)));
-    as_ld(t3, StackPointer, (int16_t)-(4 * sizeof(uintptr_t)));
+    as_lw(t0, StackPointer, (int16_t)-(1 * sizeof(uintptr_t)));
+    as_lw(t1, StackPointer, (int16_t)-(2 * sizeof(uintptr_t)));
+    as_lw(t2, StackPointer, (int16_t)-(3 * sizeof(uintptr_t)));
+    as_lw(t3, StackPointer, (int16_t)-(4 * sizeof(uintptr_t)));
     as_ld(t4, StackPointer, (int16_t)-(5 * sizeof(uintptr_t)));
     if (temp == InvalidReg)
-      as_ld(t5, StackPointer, (int16_t)-(6 * sizeof(uintptr_t)));
+      as_lw(t5, StackPointer, (int16_t)-(6 * sizeof(uintptr_t)));
 }
 
 //atomicEffectOp
