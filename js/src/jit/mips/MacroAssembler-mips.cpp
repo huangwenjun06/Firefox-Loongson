@@ -3813,6 +3813,117 @@ MacroAssemblerMIPSCompat::atomicFetchOp(int nbytes, bool signExtend, AtomicOp op
 
 //hwj atomic end
 
+//hwj compareExchange start
+void
+MacroAssemblerMIPSCompat::compareExchangeMIPS(int nbytes, bool signExtend, const Register& addr,
+                    Register oldval, Register newval, Register output, AllocatableGeneralRegisterSet& regs)
+{
+    Label again, end;
+    Register t0, t1, t2, t3, t4;
+
+    t0 = regs.takeAny();
+    t1 = regs.takeAny();
+    t2 = regs.takeAny();
+    t3 = regs.takeAny();
+    t4 = regs.takeAny();
+
+    // The addr maybe is ScratchRegister, so don't use macro
+    // instructions depends it here.
+    as_sw(t0, StackPointer, (int16_t)-(1 * sizeof(uintptr_t)));
+    as_sw(t1, StackPointer, (int16_t)-(2 * sizeof(uintptr_t)));
+    as_sw(t2, StackPointer, (int16_t)-(3 * sizeof(uintptr_t)));
+    as_sw(t3, StackPointer, (int16_t)-(4 * sizeof(uintptr_t)));
+    as_sw(t4, StackPointer, (int16_t)-(5 * sizeof(uintptr_t)));
+
+    as_andi(t0, addr, 3);
+    as_subu(addr, addr, t0);
+    as_sll(t2, t0, 3);
+    ma_li(t3, Imm32(0xffffffffu >> ((4 - nbytes) * 8)));
+    as_sllv(t3, t3, t2);
+    ma_not(t4, t3);
+
+    bind(&again);
+
+    as_sync(0);
+
+    as_ll(t0, addr, 0);
+
+    as_and(output, t0, t3);
+    // If oldval is valid register, do compareExchange
+    if (InvalidReg != oldval) {
+        as_sllv(t1, oldval, t2);
+        as_and(t1, t1, t3);
+        ma_b(output, t1, &end, NotEqual, ShortJump);
+    }
+
+    as_sllv(t1, newval, t2);
+    as_and(t1, t1, t3);
+    as_and(t0, t0, t4);
+    as_or(t0, t0, t1);
+
+    as_sc(t0, addr, 0);
+
+    ma_b(t0, t0, &again, Zero, ShortJump);
+
+    as_sync(0);
+
+    bind(&end);
+
+    as_srlv(output, output, t2);
+    if (signExtend) {
+        switch (nbytes) {
+        case 1:
+            as_seb(output, output);
+            break;
+        case 2:
+            as_seh(output, output);
+            break;
+        case 4:
+            as_sll(output, output, 0);
+            break;
+        default:
+            MOZ_CRASH("NYI");
+        }
+    }
+
+    as_lw(t0, StackPointer, (int16_t)-(1 * sizeof(uintptr_t)));
+    as_lw(t1, StackPointer, (int16_t)-(2 * sizeof(uintptr_t)));
+    as_lw(t2, StackPointer, (int16_t)-(3 * sizeof(uintptr_t)));
+    as_lw(t3, StackPointer, (int16_t)-(4 * sizeof(uintptr_t)));
+    as_lw(t4, StackPointer, (int16_t)-(5 * sizeof(uintptr_t)));
+}
+
+void
+MacroAssemblerMIPSCompat::compareExchange(int nbytes, bool signExtend, const Address& address,
+                    Register oldval, Register newval, Register output)
+{
+    AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
+
+    regs.takeUnchecked(oldval);
+    regs.takeUnchecked(newval);
+    regs.takeUnchecked(output);
+    regs.takeUnchecked(address.base);
+    computeEffectiveAddress(address, ScratchRegister);
+    compareExchangeMIPS(nbytes, signExtend, ScratchRegister, oldval, newval, output, regs);
+}
+
+void
+MacroAssemblerMIPSCompat::compareExchange(int nbytes, bool signExtend, const BaseIndex& address,
+                    Register oldval, Register newval, Register output)
+{
+    AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
+
+    regs.takeUnchecked(oldval);
+    regs.takeUnchecked(newval);
+    regs.takeUnchecked(output);
+    regs.takeUnchecked(address.base);
+    regs.takeUnchecked(address.index);
+    computeEffectiveAddress(address, ScratchRegister);
+    compareExchangeMIPS(nbytes, signExtend, ScratchRegister, oldval, newval, output, regs);
+}
+
+//hwj compareExchange end
+
 CodeOffsetLabel
 MacroAssemblerMIPSCompat::toggledJump(Label* label)
 {
