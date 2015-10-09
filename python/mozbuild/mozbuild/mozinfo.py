@@ -70,10 +70,10 @@ def build_dict(config, env=os.environ):
             p = "x86"
     d["processor"] = p
     # hardcoded list of 64-bit CPUs
-    if p in ["x86_64", "ppc64", "mips64el"]:
-        d["bits"] = 64
+    if p in ["x86_64", "ppc64", "mips64el", "mips64el"]:
+        d["bits"] = 32
     # hardcoded list of known 32-bit CPUs
-    elif p in ["x86", "arm", "ppc"]:
+    elif p in ["x86", "arm", "ppc", "mips", "mipsel"]:
         d["bits"] = 32
     # other CPUs will wind up with unknown bits
 
