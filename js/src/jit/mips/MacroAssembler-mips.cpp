@@ -3924,6 +3924,36 @@ MacroAssemblerMIPSCompat::compareExchange(int nbytes, bool signExtend, const Bas
 
 //hwj compareExchange end
 
+//hwj atomicExchange start
+void
+MacroAssemblerMIPSCompat::atomicExchange(int nbytes, bool signExtend, const Address& address,
+                    Register value, Register output)
+{
+    AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
+
+    regs.takeUnchecked(value);
+    regs.takeUnchecked(output);
+    regs.takeUnchecked(address.base);
+    computeEffectiveAddress(address, ScratchRegister);
+    compareExchangeMIPS(nbytes, signExtend, ScratchRegister, InvalidReg, value, output, regs);
+}
+
+void
+MacroAssemblerMIPSCompat::atomicExchange(int nbytes, bool signExtend, const BaseIndex& address,
+                    Register value, Register output)
+{
+    AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
+
+    regs.takeUnchecked(value);
+    regs.takeUnchecked(output);
+    regs.takeUnchecked(address.base);
+    regs.takeUnchecked(address.index);
+    computeEffectiveAddress(address, ScratchRegister);
+    compareExchangeMIPS(nbytes, signExtend, ScratchRegister, InvalidReg, value, output, regs);
+}
+
+//hwj atomicExchange end
+
 CodeOffsetLabel
 MacroAssemblerMIPSCompat::toggledJump(Label* label)
 {
