@@ -3696,7 +3696,7 @@ MacroAssemblerMIPSCompat::atomicFetchOpMIPS(int nbytes, bool signExtend, AtomicO
     as_lw(t1, StackPointer, (int16_t)-(2 * sizeof(uintptr_t)));
     as_lw(t2, StackPointer, (int16_t)-(3 * sizeof(uintptr_t)));
     as_lw(t3, StackPointer, (int16_t)-(4 * sizeof(uintptr_t)));
-    as_ld(t4, StackPointer, (int16_t)-(5 * sizeof(uintptr_t)));
+    as_lw(t4, StackPointer, (int16_t)-(5 * sizeof(uintptr_t)));
     if (temp == InvalidReg)
       as_lw(t5, StackPointer, (int16_t)-(6 * sizeof(uintptr_t)));
 }
